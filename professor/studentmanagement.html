@@ -1189,46 +1189,46 @@ if (data.email) profilesMap.set(data.email, { birthday:data.birthday||null, age:
 
                     const bestCatPerTest = new Map();
                     const testNames      = new Set();
+                    const processedResults = []; // Track processed results with both category and score
 
                     for (const r of results) {
                         testNames.add(r.testName);
                         // Never use savedScore/category — always re-classify from raw result value
                         const rawVal = r.result ?? r.repetitions ?? r.resultData ?? null;
-                        const cat = await getNormCategoryWithPriority(r.testName, rawVal, r.testId, email, profile.gender||'male', _studentAge(profile));
+                        const normCat = await getNormCategoryWithPriority(r.testName, rawVal, r.testId, email, profile.gender||'male', _studentAge(profile));
+                        
                         // Key by testId only — one entry per unique test, keep the best
                         const key = r.testId || r.testName;
-                        if (!bestCatPerTest.has(key) || (CATEGORY_ORDER[cat]||3) > (CATEGORY_ORDER[bestCatPerTest.get(key)]||0)) {
-                            bestCatPerTest.set(key, cat);
+                        if (!bestCatPerTest.has(key) || (CATEGORY_ORDER[normCat]||3) > (CATEGORY_ORDER[bestCatPerTest.get(key)]||0)) {
+                            bestCatPerTest.set(key, normCat);
                         }
+
+                        // Compute numeric score for this result (for both PE1 and non-PE1)
+                        let numScore = null;
+                        const target = r.testTarget || r.targetRepetitions || 0;
+                        const numVal = extractNumericResult(rawVal);
+                        if (target > 0 && numVal) {
+                            const testNameLower = (r.testName || '').toLowerCase();
+                            const isLower = testNameLower.includes('step test') || testNameLower.includes('3-minute');
+                            const pct = isLower ? (target / numVal) * 100 : (numVal / target) * 100;
+                            numScore = Math.min(100, Math.max(0, pct));
+                        } else if (r.score && !isNaN(Number(r.score))) {
+                            numScore = Number(r.score);
+                        }
+
+                        processedResults.push({
+                            ...r,
+                            normCategory: normCat,
+                            score: numScore
+                        });
                     }
 
                     // Resolve course code for this student's section
                     const studentSection = sections.find(s => s.name === section.name);
                     const courseCode = studentSection?.courseCode || 'PE1';
-                    const isNonPE1 = courseCode.toUpperCase().replace(/\s+/g,'') !== 'PE1';
 
                     const categories = Array.from(bestCatPerTest.values());
-
-                    // For PE2/PE3, also compute numeric scores (matching studentgrades.html logic)
-                    let numericScores = [];
-                    if (isNonPE1) {
-                        for (const r of results) {
-                            const rawVal = r.result ?? r.repetitions ?? r.resultData ?? null;
-                            const target = r.testTarget || r.targetRepetitions || 0;
-                            const numVal = extractNumericResult(rawVal);
-                            if (target > 0 && numVal) {
-                            const testNameLower = (r.testName || '').toLowerCase();
-                            const isLower = testNameLower.includes('step test') || testNameLower.includes('3-minute');
-                            // Use exact percentage (not bucketed) to match studentgrades.html
-                            const pct = isLower ? (target / numVal) * 100 : (numVal / target) * 100;
-                            numericScores.push(Math.min(100, Math.max(0, pct)));
-                        } else if (r.score && !isNaN(Number(r.score))) {
-                            numericScores.push(Number(r.score));
-                        }
-                        }
-                    }
-
-                    const overallCategory = getOverallCategory(categories, numericScores, courseCode);
+                    const overallCategory = getOverallCategory(processedResults, courseCode);
 
                     newStudents.push({
                     id: email, email,
@@ -1242,7 +1242,6 @@ if (data.email) profilesMap.set(data.email, { birthday:data.birthday||null, age:
                     totalAttempts: results.length,
                     uniqueTestCount: categories.length,
                     categories,
-                    numericScores,
                     overallCategory,
                     overallScore: CATEGORY_ORDER[overallCategory] || 3,
                     status: 'active',
@@ -1252,7 +1251,7 @@ if (data.email) profilesMap.set(data.email, { birthday:data.birthday||null, age:
                     medicalCondition: profile.medicalCondition || null,
                     medicalProofURL: profile.medicalProofURL || null,
                     testNames: Array.from(testNames),
-                    testResultsRaw: results,
+                    testResultsRaw: processedResults,
                 });
                 }
             }
@@ -1405,28 +1404,95 @@ function setupRealtimeUpdates() {
         return 'Average';
     }
 
-    function getOverallCategory(cats, scores, courseCode) {
-    if (!cats?.length) return null;
-    const RANK = { Excellent:5, Good:4, Average:3, 'Below Average':2, Poor:1 };
-    const isNonPE1 = courseCode && courseCode.toUpperCase().replace(/\s+/g,'') !== 'PE1';
-    
-    if (isNonPE1 && scores?.length) {
-        // PE2/3/4: average exact percentages → category (matches studentgrades.html)
-        const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
-        if (avg >= 100) return 'Excellent';
-        if (avg >= 80)  return 'Good';
-        if (avg >= 60)  return 'Average';
-        if (avg >= 40)  return 'Below Average';
+    // ─── Helper: isPeNoNormCourse (matches studentgrades.html) ────────────
+    function isPeNoNormCourse(result) {
+        if (!result) return false;
+        const courseCode = result?.courseCode || result?.result?.courseCode || result?.resultData?.courseCode;
+        const normalized = String(courseCode || '').toUpperCase().replace(/\s+/g, '');
+        return normalized === 'PE2' || normalized === 'PE3' || normalized === 'PE4' || /^PE[2-9]\d*$/.test(normalized);
+    }
+
+    // ─── Helper: mapNormCategoryToScore (matches studentgrades.html) ─────
+    function mapNormCategoryToScore(cat) {
+        return { Excellent: 100, Good: 90, Average: 80, 'Below Average': 70, Poor: 60 }[cat] ?? 75;
+    }
+
+    // ─── Helper: normCategoryRank (matches studentgrades.html) ────────────
+    function normCategoryRank(cat) {
+        if (!cat) return 3;
+        const c = cat.toLowerCase();
+        if (c === 'excellent') return 5;
+        if (c === 'good' || c === 'athletic' || c === 'fitness') return 4;
+        if (c === 'average' || c === 'essential fat') return 3;
+        if (c === 'below average' || c === 'overfat') return 2;
+        if (c === 'poor' || c === 'obese') return 1;
+        return 3;
+    }
+
+    // ─── Helper: rankToCategory (matches studentgrades.html) ──────────────
+    function rankToCategory(rank) {
+        if (rank >= 4.5) return 'Excellent';
+        if (rank >= 3.5) return 'Good';
+        if (rank >= 2.5) return 'Average';
+        if (rank >= 1.5) return 'Below Average';
         return 'Poor';
     }
-    // PE1: rank-based norm averaging
-    const avg = cats.reduce((s, c) => s + (RANK[c] || 3), 0) / cats.length;
-    if (avg >= 4.5) return 'Excellent';
-    if (avg >= 3.5) return 'Good';
-    if (avg >= 2.5) return 'Average';
-    if (avg >= 1.5) return 'Below Average';
-    return 'Poor';
-}
+
+    // ─── Overall category calculation (matches studentgrades.html logic) ──
+    function getOverallCategory(results, courseCode) {
+        if (!results?.length) return null;
+
+        // Separate PE1 and non-PE1 results
+        const nonPE1Results = results.filter(r => isPeNoNormCourse(r));
+        const pe1Results = results.filter(r => !isPeNoNormCourse(r));
+
+        let overallCat = null;
+
+        if (results.length > 0) {
+            if (nonPE1Results.length > 0 && pe1Results.length === 0) {
+                // PE2/3/4 only: average the numeric scores
+                const scores = nonPE1Results
+                    .map(r => {
+                        const s = Number(r.score);
+                        return (!isNaN(s) && s > 0) ? s : null;
+                    })
+                    .filter(s => s !== null);
+                if (scores.length > 0) {
+                    const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+                    if (avg >= 100) overallCat = 'Excellent';
+                    else if (avg >= 80) overallCat = 'Good';
+                    else if (avg >= 60) overallCat = 'Average';
+                    else if (avg >= 40) overallCat = 'Below Average';
+                    else overallCat = 'Poor';
+                }
+            } else if (pe1Results.length > 0 && nonPE1Results.length === 0) {
+                // PE1 only: rank-average the norm categories
+                const pe1Categories = pe1Results.map(r => r.normCategory).filter(Boolean);
+                if (pe1Categories.length > 0) {
+                    const avgRank = pe1Categories.map(normCategoryRank).reduce((a, b) => a + b, 0) / pe1Categories.length;
+                    overallCat = rankToCategory(avgRank);
+                }
+            } else {
+                // Mixed case: convert categories to scores and combine
+                const nonPE1Scores = nonPE1Results.map(r => Number(r.score)).filter(s => !isNaN(s) && s > 0);
+                const pe1Categories = pe1Results.map(r => r.normCategory).filter(Boolean);
+                const allScores = [
+                    ...nonPE1Scores,
+                    ...pe1Categories.map(mapNormCategoryToScore)
+                ];
+                if (allScores.length > 0) {
+                    const avg = allScores.reduce((a, b) => a + b, 0) / allScores.length;
+                    if (avg >= 100) overallCat = 'Excellent';
+                    else if (avg >= 80) overallCat = 'Good';
+                    else if (avg >= 60) overallCat = 'Average';
+                    else if (avg >= 40) overallCat = 'Below Average';
+                    else overallCat = 'Poor';
+                }
+            }
+        }
+
+        return overallCat;
+    }
 
     function getCategoryClass(c) {
         return { Excellent:'category-excellent', Good:'category-good', Average:'category-average', 'Below Average':'category-below-average', Poor:'category-poor' }[c] || 'category-default';

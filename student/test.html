@@ -425,7 +425,9 @@ function getPECategory(courseCode) {
 function normalizeCourseCode(value) {
     const normalized = String(value || '').toUpperCase().replace(/\s+/g, '');
     if (normalized === 'PE1') return 'PE1';
-    if (normalized.startsWith('PE')) return normalized; // PE2, PE3, PE4, etc.
+    // PE3/PE4 are deprecated across the app; treat them as PE2 for computation consistency.
+    if (normalized === 'PE3' || normalized === 'PE4') return 'PE2';
+    if (normalized.startsWith('PE')) return normalized; // PE2, etc.
     return 'PE1';
 }
 
@@ -519,8 +521,8 @@ function normalizeCourseCode(value) {
         // ─── Helper: isPeNoNormCourse (matches studentgrades.html) ─────────
         function isPeNoNormCourse(result) {
             if (!result) return false;
-            const studentCourse = (studentData?.courseCode || '').toUpperCase().replace(/\s+/g, '');
-            if (studentCourse && studentCourse !== 'PE1') return true;
+            const studentCourse = normalizeCourseCode(studentData?.courseCode || '');
+            if (studentCourse === 'PE2') return true;
             const candidates = [
                 result?.courseCode,
                 result?.result?.courseCode,
@@ -531,10 +533,7 @@ function normalizeCourseCode(value) {
                 const scheduledData = scheduledTestsCache.get(`scheduled:${scheduledId}`);
                 if (scheduledData?.courseCode) candidates.push(scheduledData.courseCode);
             }
-            return candidates.some(code => {
-                const normalized = String(code || '').toUpperCase().replace(/\s+/g, '');
-                return normalized === 'PE2' || normalized === 'PE3' || normalized === 'PE4' || /^PE[2-9]\d*$/.test(normalized);
-            });
+            return candidates.some(code => normalizeCourseCode(code) === 'PE2');
         }
 
         function isValidScore(v) {
@@ -996,7 +995,7 @@ function renderCategoryCards(attemptsMap) {
         }
         container.innerHTML = html;
 } else {
-        // ── PE2/PE3/PE4 logic: single category with ALL scheduled tests ──────
+        // ── PE2 logic: single category with ALL scheduled tests ──────
         const peCategories = getPECategory(course);
         const catName = Object.keys(peCategories)[0];
         const catData = peCategories[catName];

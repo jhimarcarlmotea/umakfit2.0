@@ -852,7 +852,12 @@
                 const scheduledData = normDocsCache.get(`scheduled:${scheduledId}`);
                 candidates.push(scheduledData?.courseCode);
             }
-            return candidates.some(code => /^pe\s*[234]$/i.test(String(code || '').trim()));
+            return candidates.some(code => {
+                const n = String(code || '').toUpperCase().replace(/\s+/g, '');
+                // PE3/PE4 are deprecated; treat them as PE2.
+                const normalized = (n === 'PE3' || n === 'PE4') ? 'PE2' : n;
+                return normalized === 'PE2';
+            });
         }
 
         function getDashboardDisplayCategory(result) {
@@ -2805,10 +2810,10 @@ function setupDashboardDeadlineWatcher() {
     function shouldShowBestAt() {
     if (!studentData) return true;
     const courseCode = (studentData.course || '').toString().toUpperCase().trim();
-    // Hide Best At for PE 2, PE 3, PE 4
-    if (courseCode === 'PE 2' || courseCode === 'PE2' || 
-        courseCode === 'PE 3' || courseCode === 'PE3' || 
-        courseCode === 'PE 4' || courseCode === 'PE4') {
+    // Hide Best At for PE2 (PE3/PE4 normalized to PE2)
+    const cc = courseCode.replace(/\s+/g,'');
+    const normalized = (cc === 'PE3' || cc === 'PE4') ? 'PE2' : cc;
+    if (normalized === 'PE2') {
         return false;
     }
     // Show Best At for PE 1 and all other courses

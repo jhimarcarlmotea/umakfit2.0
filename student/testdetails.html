@@ -1674,8 +1674,8 @@ function showToast(message, type = 'info') {
                 'Start slowly to warm up, then build to your full pace'
             ]
         },
-            'Pingpong': {
-    category: 'PE3 ACTIVITY — TABLE TENNIS',
+    'Pingpong': {
+    category: 'PE2 ACTIVITY — TABLE TENNIS',
     icon: 'https://c.animaapp.com/HN7hFbsr/img/image-150@2x.png',
     badgeIcon: 'https://c.animaapp.com/pVU46Rgb/img/image-152@2x.png',
     getDuration: (target) => target ? `Target: ${target} ball controls` : 'Maximum repetitions',
@@ -1703,7 +1703,7 @@ function showToast(message, type = 'info') {
     ]
 },
     'Basketball': {
-        category: 'PE4 ACTIVITY — BASKETBALL',
+        category: 'PE2 ACTIVITY — BASKETBALL',
         icon: 'https://c.animaapp.com/HN7hFbsr/img/image-150@2x.png',
         badgeIcon: 'https://c.animaapp.com/pVU46Rgb/img/image-152@2x.png',
         getDuration: (target) => target ? `Target: ${target} repetitions` : 'Maximum repetitions',
@@ -1761,7 +1761,7 @@ function showToast(message, type = 'info') {
                        normalizedName.includes('table tennis');
     if (isPingpong) {
         const base = { ...testData['Pingpong'] };
-        base.category = `PE3 ACTIVITY — ${testName.toUpperCase()}`;
+        base.category = `PE2 ACTIVITY — ${testName.toUpperCase()}`;
         // Customize protocol based on specific variant
         if (normalizedName.includes('front')) {
             base.protocol = [
@@ -1807,7 +1807,7 @@ function showToast(message, type = 'info') {
                          normalizedName.includes('free throw');
     if (isBasketball) {
         const base = { ...testData['Basketball'] };
-        base.category = `PE4 ACTIVITY — ${testName.toUpperCase()}`;
+        base.category = `PE2 ACTIVITY — ${testName.toUpperCase()}`;
         // Customize per specific skill
         if (normalizedName.includes('dribbling')) {
             base.objective = 'To assess stationary dribbling control and hand coordination using a basketball.';

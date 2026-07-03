@@ -551,9 +551,16 @@
         return 'Poor';
     }
 
+    function _normalizeCourseCode(code){
+        const n = String(code || '').toUpperCase().replace(/\s+/g,'');
+        // PE3/PE4 are deprecated across the app; treat them as PE2 for computation consistency.
+        if (n === 'PE3' || n === 'PE4') return 'PE2';
+        return n || 'PE1';
+    }
+
     function _isPeNoNormCourse(testData = null, rawResult = null){
         const candidates=[testData?.courseCode,rawResult?.courseCode];
-        return candidates.some(code=>/^pe\s*[234]$/i.test(String(code||'').trim()));
+        return candidates.some(code => _normalizeCourseCode(code) === 'PE2');
     }
 
     function _scoreToCategory(score){
@@ -687,7 +694,7 @@
         const targetCategory=_classifyByProfessorTarget(testName, rawResult, testData, resultDoc);
         if(targetCategory) return set(targetCategory);
 
-        // PE 2/3/4 must not use norms.
+        // PE2 must not use norms. (PE3/PE4 are normalized to PE2)
         if(_isPeNoNormCourse(testData, rawResult)){
             const fallbackScore=_getFallbackScore(testName,rawResult,testData,resultDoc);
             const fromFallback=_scoreToCategory(fallbackScore);
@@ -851,7 +858,7 @@
             if(!isSkinfold){
     const cs=CATEGORY_ORDER[cat]||3;
     const ex=bestPerTest.get(mk);
-    const isPe2Entry=/^pe\s*2$/i.test(String(testData?.courseCode||'').trim());
+    const isPe2Entry = _normalizeCourseCode(testData?.courseCode) === 'PE2';
     // ✅ Resolve actual numeric score (same as studentgrades resolveResultScore)
     let numericScore = null;
     if(isPe2Entry){

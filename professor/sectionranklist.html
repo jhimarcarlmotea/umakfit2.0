@@ -852,12 +852,19 @@ import { resolveTestKey, extractNumericResult } from './normLookup.js';
         return 0;
     }
 
-    // Check if section courseCode is PE2/PE3 (no fitness norms — target-based only)
+    function _normalizeCourseCodeLocal(code){
+        const n = String(code || '').toUpperCase().replace(/\s+/g,'');
+        // PE3/PE4 are deprecated across the app; treat them as PE2.
+        if (n === 'PE3' || n === 'PE4') return 'PE2';
+        return n || 'PE1';
+    }
+
+    // Check if section courseCode is PE2 (no fitness norms — target-based only)
     function _isNonPE1Section(sectionId) {
         const sec = assignedSections.find(s => s.id === sectionId);
         if (!sec) return false;
-        const code = (sec.courseCode || '').toUpperCase().replace(/\s+/g, '');
-        return code !== 'PE1' && code.startsWith('PE');
+        const code = _normalizeCourseCodeLocal(sec.courseCode);
+        return code === 'PE2';
     }
 
     async function classifyResult(testName, rawResult, testId, studentEmail, gender, studentData, sectionId) {
@@ -871,7 +878,7 @@ import { resolveTestKey, extractNumericResult } from './normLookup.js';
         const scheduledData = await _getScheduledTestData(testId);
         const target = _resolveTarget(scheduledData, rawResult);
 
-        // PE2/PE3: target-based percentage scoring (matches studentgrades.html exactly)
+        // PE2: target-based percentage scoring (matches studentgrades.html exactly)
         if (_isNonPE1Section(sectionId)) {
             if (target > 0 && value > 0) {
                 const testNameLower = (testName || '').toLowerCase();

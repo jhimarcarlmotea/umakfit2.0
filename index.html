@@ -594,15 +594,13 @@
                     <div id="errorMessage" class="hidden"></div>
                     <button class="google-btn" id="googleSignInBtn" type="button">
                         <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
-                        <span class="google-btn-text">Continue with UMak Gmail</span>
+                        <span class="google-btn-text">Continue with Google</span>
                     </button>
                     <div class="card-divider"><span>Secure Access</span></div>
                     <div class="trust-row">
                         <div class="trust-item"><i class="fas fa-shield-alt"></i><span>Secure Login</span></div>
-                        <div class="trust-item"><i class="fas fa-lock"></i><span>UMak Email Only</span></div>
                         <div class="trust-item"><i class="fas fa-bolt"></i><span>Instant Access</span></div>
                     </div>
-                    <p class="card-note">Only <strong>@umak.edu.ph</strong> accounts are permitted.<br>Contact your college secretary if you need access.</p>
                 </div>
             </div>
         </div>
@@ -687,8 +685,7 @@
 
         const googleProvider = new GoogleAuthProvider();
         googleProvider.setCustomParameters({
-            prompt: 'select_account',
-            hd:     'umak.edu.ph'
+            prompt: 'select_account'
         });
 
         // ════════════════════════════════════════════════════════════
@@ -719,16 +716,10 @@
             if (user) {
                 // User is already logged in (e.g. returning to the login page
                 // while still authenticated). Redirect them automatically.
-                if (user.email && user.email.endsWith('@umak.edu.ph')) {
-                    showLoading('Restoring your session...');
-                    try {
-                        await checkUserStatus(user);
-                    } catch(e) {
-                        hideLoading();
-                    }
-                } else {
-                    // Signed in with a non-umak account, sign them out silently
-                    await signOut(auth);
+                showLoading('Restoring your session...');
+                try {
+                    await checkUserStatus(user);
+                } catch(e) {
                     hideLoading();
                 }
             } else {
@@ -1007,14 +998,6 @@ if (userDocSnap.exists()) {
             // signInWithPopup called synchronously — popup opens before any async work
             signInWithPopup(auth, googleProvider)
                 .then(async (result) => {
-                    if (!result.user.email.endsWith('@umak.edu.ph')) {
-                        await signOut(auth);
-                        sessionStorage.removeItem(SESSION_HANDLING_KEY);
-                        hideLoading();
-                        showError('Please use your UMak Gmail account (@umak.edu.ph)');
-                        busy = false;
-                        return;
-                    }
                     await checkUserStatus(result.user);
                     // on success checkUserStatus navigates away; no need to clear flag
                 })
@@ -1029,7 +1012,6 @@ if (userDocSnap.exists()) {
                     else if (error.code === 'auth/cancelled-popup-request')                  errorMessage = 'Sign in was cancelled. Please try again.';
                     else if (error.code === 'auth/popup-blocked')                            errorMessage = 'Popup blocked. Please allow popups for this site and try again.';
                     else if (error.code === 'auth/account-exists-with-different-credential') errorMessage = 'An account already exists with the same email but different sign-in credentials.';
-                    else if (error.code === 'auth/invalid-domain')                           errorMessage = 'Please use your UMak Gmail account (@umak.edu.ph)';
                     else if (error.code === 'auth/network-request-failed')                   errorMessage = 'Network error. Check your connection and try again.';
 
                     showError(errorMessage);

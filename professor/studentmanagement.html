@@ -1065,7 +1065,7 @@
             name:        data.name        || 'Unnamed Section',
             yearLevel:   data.yearLevel   || extractYearLevel(data.name),
             studentCount: (data.students || []).length,
-            courseCode:  data.courseCode  || 'PE 3',
+            courseCode:  data.courseCode  || 'PE 2',
             schedule,
             createdYear: data.academicYear || data.schoolYear || data.year || '2025-2026',
             timeSlot:    data.time   || '',
@@ -1404,12 +1404,18 @@ function setupRealtimeUpdates() {
         return 'Average';
     }
 
+    function normalizeCourseCodeLocal(code) {
+        const n = String(code || '').toUpperCase().replace(/\s+/g, '');
+        // PE3/PE4 are deprecated across the app; treat them as PE2.
+        if (n === 'PE3' || n === 'PE4') return 'PE2';
+        return n || 'PE1';
+    }
+
     // ─── Helper: isPeNoNormCourse (matches studentgrades.html) ────────────
     function isPeNoNormCourse(result) {
         if (!result) return false;
         const courseCode = result?.courseCode || result?.result?.courseCode || result?.resultData?.courseCode;
-        const normalized = String(courseCode || '').toUpperCase().replace(/\s+/g, '');
-        return normalized === 'PE2' || normalized === 'PE3' || normalized === 'PE4' || /^PE[2-9]\d*$/.test(normalized);
+        return normalizeCourseCodeLocal(courseCode) === 'PE2';
     }
 
     // ─── Helper: mapNormCategoryToScore (matches studentgrades.html) ─────
@@ -1450,7 +1456,7 @@ function setupRealtimeUpdates() {
 
         if (results.length > 0) {
             if (nonPE1Results.length > 0 && pe1Results.length === 0) {
-                // PE2/3/4 only: average the numeric scores
+                // PE2 only (PE3/PE4 normalized to PE2): average the numeric scores
                 const scores = nonPE1Results
                     .map(r => {
                         const s = Number(r.score);
@@ -2427,7 +2433,7 @@ repetitions: completed?.repetitions ?? null,
             document.getElementById('sectionDetailsContent').innerHTML = `
                 <div class="student-info-header">
                     <div class="student-avatar"><i class="fas fa-users text-white"></i></div>
-                    <div class="student-basic-info"><div class="student-name">${esc(data.name)}</div><div class="student-id">${esc(data.courseCode||'PE 3')} • ${esc(ay)} • ${esc(sched)}</div></div>
+                    <div class="student-basic-info"><div class="student-name">${esc(data.name)}</div><div class="student-id">${esc(data.courseCode||'PE 2')} • ${esc(ay)} • ${esc(sched)}</div></div>
                 </div>
                 <div class="student-info-grid">
                     <div class="info-item"><div class="info-label">Total Students</div><div class="info-value"><strong style="color:#2d6fc4;font-size:18px;">${secStudents.length}</strong></div></div>
@@ -2480,9 +2486,10 @@ repetitions: completed?.repetitions ?? null,
             allAttemptsByTest.get(key).attempts.push(attempt);
         });
 
-        // Detect PE2/PE3 for this student
-        const studentCourseCodeModal = student.courseCode || sections.find(s => s.name === student.section)?.courseCode || 'PE1';
-        const isNonPE1Modal = studentCourseCodeModal.toUpperCase().replace(/\s+/g,'') !== 'PE1';
+        // Detect PE2 for this student (PE3/PE4 normalized to PE2)
+        const studentCourseCodeModalRaw = student.courseCode || sections.find(s => s.name === student.section)?.courseCode || 'PE1';
+        const studentCourseCodeModal = normalizeCourseCodeLocal(studentCourseCodeModalRaw);
+        const isNonPE1Modal = studentCourseCodeModal === 'PE2';
 
         // Pre-fetch scheduled test docs to get targetRepetitions (same as studentresult.html)
         const scheduledTestIds = [...new Set(allDocs.map(a => a.testId || a.scheduledTestId).filter(Boolean))];

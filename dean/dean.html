@@ -1253,8 +1253,17 @@ const CATEGORY_ORDER = { 'Excellent': 5, 'Good': 4, 'Average': 3, 'Below Average
         return 'Average';
     }
 
+    function _isSkinfoldTestDean(testName = '') {
+        const n = String(testName || '').toLowerCase();
+        return n.includes('skinfold') ||
+               n.includes('skin fold') ||
+               n.includes('body fat') ||
+               n.includes('caliper') ||
+               n.includes('body composition');
+    }
+
     function getOverallCategory(categories) {
-        if (!categories || !categories.length) return 'Average';
+        if (!categories || !categories.length) return null;
         const scores = categories.map(c => CATEGORY_ORDER[c] || 3);
         const avg = scores.reduce((a,b)=>a+b,0) / scores.length;
         if (avg>=4.5) return 'Excellent'; if (avg>=3.5) return 'Good'; if (avg>=2.5) return 'Average'; if (avg>=1.5) return 'Below Average'; return 'Poor';
@@ -1294,9 +1303,15 @@ const CATEGORY_ORDER = { 'Excellent': 5, 'Good': 4, 'Average': 3, 'Below Average
         return { Excellent: 100, Good: 90, Average: 80, 'Below Average': 70, Poor: 60 }[cat] ?? 75;
     }
 
+    // PE3/PE4 are deprecated across the app; treat them as PE2 for computation consistency.
+    function _normalizeDeanCourseCode(code) {
+        const n = String(code || '').toUpperCase().replace(/\s+/g, '');
+        if (n === 'PE3' || n === 'PE4') return 'PE2';
+        return n || 'PE1';
+    }
+
     function isPeNoNormCourseCode(courseCode) {
-        const n = String(courseCode || '').toUpperCase().replace(/\s+/g, '');
-        return !!(n && n !== 'PE1' && (n === 'PE2' || n === 'PE3' || n === 'PE4' || /^PE[2-9]\d*$/.test(n)));
+        return _normalizeDeanCourseCode(courseCode) === 'PE2';
     }
 
     function isPeNoNormTest(test, studentCourseCode) {
@@ -1338,17 +1353,33 @@ const CATEGORY_ORDER = { 'Excellent': 5, 'Good': 4, 'Average': 3, 'Below Average
         return 0;
     }
 
-    // Mirrors studentgrades.html isPeNoNormCourse()
+    // Per-test PE2 detection — scheduled test courseCode takes priority (matches professor grades.html)
     function isPeNoNormCourseDean(test, studentCourseCode) {
-        const studentCourse = String(studentCourseCode || test?.courseCode || '').toUpperCase().replace(/\s+/g, '');
-        if (studentCourse && studentCourse !== 'PE1') return true;
-        const candidates = [test?.courseCode, test?.result?.courseCode, test?.resultData?.courseCode];
         const scheduledId = test?.testId || test?.scheduledTestId;
         if (scheduledId) {
             const scheduledData = deanSchedTestCache.get(scheduledId);
-            if (scheduledData?.courseCode) candidates.push(scheduledData.courseCode);
+            if (scheduledData?.courseCode) {
+                return isPeNoNormCourseCode(scheduledData.courseCode);
+            }
         }
+        const candidates = [test?.result?.courseCode, test?.resultData?.courseCode, test?.courseCode];
         return candidates.some(code => isPeNoNormCourseCode(code));
+    }
+
+    // Exact percentage for PE2 tests — mirrors professor grades.html numericScore
+    function deanProfessorNumericScore(t) {
+        if (!isPeNoNormCourseDean(t)) return null;
+        const target = resolveProfessorTargetDean(t);
+        const rawVal = extractNumericResult(t?.resultData ?? t?.result);
+        const tl = (t?.testName || '').toLowerCase();
+        const isLower = tl.includes('step test') || tl.includes('3-minute');
+        if (target > 0 && rawVal > 0) {
+            const pct = isLower ? (target / rawVal) * 100 : (rawVal / target) * 100;
+            return Math.min(100, Math.max(0, pct));
+        }
+        const s = Number(t?.numericScore ?? t?.score ?? t?.result?.score ?? t?.resultData?.score);
+        if (!isNaN(s) && s >= 0 && s <= 100) return s;
+        return null;
     }
 
     // Mirrors studentgrades.html getFallbackScore()
@@ -1458,10 +1489,7 @@ const CATEGORY_ORDER = { 'Excellent': 5, 'Good': 4, 'Average': 3, 'Below Average
     }
 
     function normalizeDeanCourseCode(value) {
-        const n = String(value || '').toUpperCase().replace(/\s+/g, '');
-        if (n === 'PE1' || n === 'PE2' || n === 'PE3' || n === 'PE4') return n;
-        if (n.startsWith('PE')) return n;
-        return n || 'PE1';
+        return _normalizeDeanCourseCode(value);
     }
 
     function resolveDeanStudentCourseCode(data, sectionCourseMap, studentInfo) {
@@ -1485,52 +1513,59 @@ const CATEGORY_ORDER = { 'Excellent': 5, 'Good': 4, 'Average': 3, 'Below Average
         const map = new Map();
         tests.forEach(t => {
             const groupKey = t.testId || t.scheduledTestId || t.testName || 'unknown';
-            const currentScore = resolveResultScoreDean(t, studentCourseCode) ?? 0;
+            const isPe2Test = isPeNoNormCourseDean(t, studentCourseCode);
+            const cat = t.category || t.normCategory || 'Average';
+            const curRank = CATEGORY_ORDER[cat] || 3;
+            const numericScore = isPe2Test ? deanProfessorNumericScore(t) : null;
+
             const existing = map.get(groupKey);
-            const existingScore = existing ? (resolveResultScoreDean(existing, studentCourseCode) ?? 0) : -1;
-            if (!existing || currentScore > existingScore ||
-                (currentScore === existingScore && _testSubmittedAt(t) > _testSubmittedAt(existing))) {
-                map.set(groupKey, t);
+            const exRank = existing ? (CATEGORY_ORDER[existing.category || existing.normCategory] || 3) : -1;
+            if (!existing || curRank > exRank ||
+                (curRank === exRank && _testSubmittedAt(t) > _testSubmittedAt(existing))) {
+                map.set(groupKey, { ...t, category: cat, isPe2: isPe2Test, numericScore });
             }
         });
         return Array.from(map.values());
     }
 
+    // Mirrors professor grades.html buildFinalGrades() — per-test PE1/PE2 split, mixed prefers PE1
     function computeOverallStanding(tests, studentCourseCode) {
-        const course = String(studentCourseCode || 'PE1').toUpperCase().replace(/\s+/g, '');
-        const deduped = dedupeBestTests(tests, course);
+        const deduped = dedupeBestTests(tests, studentCourseCode).filter(t => !_isSkinfoldTestDean(t?.testName));
         if (!deduped.length) return null;
 
-        // PE2/3/4 — same as studentgrades.html: average resolveResultScore → scoreToCategory
-        if (isPeNoNormCourseCode(course)) {
-            const scores = deduped.map(t => {
-                const s = Number(resolveResultScoreDean(t, course));
-                return (!Number.isNaN(s) && s > 0) ? s : null;
-            }).filter(s => s !== null);
-            if (scores.length) return scoreToCategory(scores.reduce((a, b) => a + b, 0) / scores.length);
-            return null;
-        }
+        const pe1Categories = [];
+        const pe2Scores = [];
+        let hasPe2 = false;
 
-        const nonPE1 = deduped.filter(t => isPeNoNormTest(t, course));
-        const pe1 = deduped.filter(t => !isPeNoNormTest(t, course));
-
-        if (nonPE1.length > 0 && pe1.length === 0) {
-            const scores = nonPE1.map(t => {
-                const s = Number(resolveResultScoreDean(t, course));
-                return (!Number.isNaN(s) && s > 0) ? s : null;
-            }).filter(s => s !== null);
-            if (scores.length) return scoreToCategory(scores.reduce((a, b) => a + b, 0) / scores.length);
-        } else if (pe1.length > 0 && nonPE1.length === 0) {
-            const cats = pe1.map(t => t.category || t.normCategory).filter(Boolean);
-            if (cats.length) {
-                const avgRank = cats.map(normCategoryRank).reduce((a, b) => a + b, 0) / cats.length;
-                return rankToCategory(avgRank);
+        deduped.forEach(t => {
+            const isPe2Test = t.isPe2 != null ? t.isPe2 : isPeNoNormCourseDean(t, studentCourseCode);
+            if (isPe2Test) {
+                hasPe2 = true;
+                const num = t.numericScore != null ? t.numericScore : deanProfessorNumericScore(t);
+                if (num != null && !isNaN(num) && num >= 0) pe2Scores.push(num);
+            } else {
+                const cat = t.category || t.normCategory;
+                if (cat && CATEGORY_ORDER[cat]) pe1Categories.push(cat);
             }
-        } else if (deduped.length > 0) {
-            const nonPE1Scores = nonPE1.map(t => resolveResultScoreDean(t, course)).filter(s => !Number.isNaN(s) && s > 0);
-            const pe1Scores = pe1.map(t => t.category || t.normCategory).filter(Boolean).map(mapNormCategoryToScore);
-            const allScores = [...nonPE1Scores, ...pe1Scores];
-            if (allScores.length) return scoreToCategory(allScores.reduce((a, b) => a + b, 0) / allScores.length);
+        });
+
+        if (hasPe2 && pe2Scores.length > 0 && pe1Categories.length === 0) {
+            const avg = pe2Scores.reduce((a, b) => a + b, 0) / pe2Scores.length;
+            return scoreToCategory(avg);
+        }
+        if (!hasPe2 && pe1Categories.length > 0) {
+            const avg = pe1Categories.reduce((a, c) => a + (CATEGORY_ORDER[c] || 3), 0) / pe1Categories.length;
+            return rankToCategory(avg);
+        }
+        if (pe1Categories.length > 0 || pe2Scores.length > 0) {
+            if (pe1Categories.length > 0) {
+                const avg = pe1Categories.reduce((a, c) => a + (CATEGORY_ORDER[c] || 3), 0) / pe1Categories.length;
+                return rankToCategory(avg);
+            }
+            if (pe2Scores.length > 0) {
+                const avg = pe2Scores.reduce((a, b) => a + b, 0) / pe2Scores.length;
+                return scoreToCategory(avg);
+            }
         }
         return null;
     }
@@ -2154,11 +2189,13 @@ async function loadTestResults() {
             deanSectionsCourseMap,
             studentInfo
         ) || normalizeDeanCourseCode(schedData?.courseCode) || 'PE1';
+        const testCourseCode = normalizeDeanCourseCode(schedData?.courseCode || data.courseCode) || studentCourseCode || 'PE1';
         const testRecord = {
             id,
             ...data,
             category,
-            courseCode: studentCourseCode,
+            courseCode: testCourseCode,
+            studentCourseCode,
             genderKey,
             ageGroup,
         };
@@ -2222,17 +2259,14 @@ function _resolveNormCategory({ testName, result, testId, studentEmail, genderKe
     // ── Get scheduled test data for target + courseCode ──
     const schedData = testId ? schedTestCache.get(testId) : null;
 
-    // ── PE 2/3/4 detection: check courseCode in scheduledTest doc ──
+    // ── PE2 detection (PE3/PE4 normalized to PE2) ──
     const isPeNoNorm = (() => {
         const candidates = [
             schedData?.courseCode,
             result?.courseCode,
             typeof result === 'object' ? result?.resultData?.courseCode : null,
         ];
-        return candidates.some(code => {
-            const n = String(code || '').toUpperCase().replace(/\s+/g, '');
-            return n === 'PE2' || n === 'PE3' || n === 'PE4' || /^PE[2-9]\d*$/.test(n);
-        });
+        return candidates.some(code => isPeNoNormCourseCode(code));
     })();
 
     // ── Target-based scoring (professor sets target reps) ──
@@ -2482,12 +2516,14 @@ testResults.forEach(t => {
     const stuMap = perSectionStudentBest[compositeKey];
 
     const existing = stuMap.get(testGroupKey);
-    const courseCode = t.courseCode || 'PE1';
-    const existingScore = existing ? resolveResultScoreDean(existing, courseCode) : -1;
-    const currentScore  = resolveResultScoreDean(t, courseCode);
-    if (!existing || currentScore > existingScore ||
-        (currentScore === existingScore && _testSubmittedAt(t) > _testSubmittedAt(existing))) {
-        stuMap.set(testGroupKey, { ...t, score: currentScore, numericScore: currentScore });
+    const cat = t.category || 'Average';
+    const curRank = CATEGORY_ORDER[cat] || 3;
+    const isPe2Test = isPeNoNormCourseDean(t);
+    const numericScore = isPe2Test ? deanProfessorNumericScore(t) : null;
+    const existingRank = existing ? (CATEGORY_ORDER[existing.category] || 3) : -1;
+    if (!existing || curRank > existingRank ||
+        (curRank === existingRank && _testSubmittedAt(t) > _testSubmittedAt(existing))) {
+        stuMap.set(testGroupKey, { ...t, category: cat, isPe2: isPe2Test, numericScore });
     }
 });
 
@@ -3979,17 +4015,14 @@ function getNormCatForTest(t) {
     // ── Get scheduledTest data (already fetched in normDocCache) ──
     const schedData = t.testId ? normDocCache.get(`scheduled:${t.testId}`) : null;
 
-    // ── PE 2/3/4 detection ──
+    // ── PE2 detection (PE3/PE4 normalized to PE2) ──
     const isPeNoNorm = (() => {
         const candidates = [
             schedData?.courseCode,
             t.courseCode,
             rawResult?.courseCode,
         ];
-        return candidates.some(code => {
-            const n = String(code || '').toUpperCase().replace(/\s+/g, '');
-            return n === 'PE2' || n === 'PE3' || n === 'PE4' || /^PE[2-9]\d*$/.test(n);
-        });
+        return candidates.some(code => isPeNoNormCourseCode(code));
     })();
 
     // ── Target-based scoring (works for PE2/3/4 AND custom PE1 targets) ──
@@ -4090,21 +4123,25 @@ function getNormCatForTest(t) {
     rawTests.forEach(t => {
         const groupKey = t.testId || t.scheduledTestId || t.testName;
         const normCat  = getNormCatForTest(t);
+        const isPe2Test = (() => {
+            const schedData = t.testId ? normDocCache.get(`scheduled:${t.testId}`) : null;
+            const candidates = [schedData?.courseCode, t.courseCode, t.result?.courseCode, t.resultData?.courseCode];
+            return candidates.some(code => isPeNoNormCourseCode(code));
+        })();
+        const numericScore = isPe2Test ? deanProfessorNumericScore(t) : null;
         const dateObj  = t.submittedAt?.toDate?.() || (t.submittedAt ? new Date(t.submittedAt) : new Date(0));
         if (!testGroups[groupKey]) {
-            testGroups[groupKey] = { ...t, normCategory: normCat, submittedAt: dateObj };
+            testGroups[groupKey] = { ...t, normCategory: normCat, category: normCat, isPe2: isPe2Test, numericScore, submittedAt: dateObj };
         } else {
-            const existRank = NORM_RANK_MAP[testGroups[groupKey].normCategory] ?? 0;
-            const newRank   = NORM_RANK_MAP[normCat] ?? 0;
+            const existRank = CATEGORY_ORDER[testGroups[groupKey].normCategory] ?? 0;
+            const newRank   = CATEGORY_ORDER[normCat] ?? 0;
             if (newRank > existRank || (newRank === existRank && dateObj > testGroups[groupKey].submittedAt)) {
-                testGroups[groupKey] = { ...t, normCategory: normCat, submittedAt: dateObj };
+                testGroups[groupKey] = { ...t, normCategory: normCat, category: normCat, isPe2: isPe2Test, numericScore, submittedAt: dateObj };
             }
         }
     });
     const dedupedTests = Object.values(testGroups);
 
-    // ── Use the SAME overallCategory already computed in loadStudentRankings()
-    //    so the modal always matches the ranking table. ──
     const overallCat = s.overallCategory || computeOverallStanding(
         (s.allRawTests || []).length ? s.allRawTests : dedupedTests,
         s.courseCode || 'PE1'

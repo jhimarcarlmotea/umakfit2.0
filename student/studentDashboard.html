@@ -2024,6 +2024,7 @@ function escapeHtml(str) {
             const color = normColors[normCat] || normColors['Completed'];
 
             const isLate = latest.status === 'overdue' || latest.status === 'late';
+            const isProfessorEdited = !!(latest.isProfessorOverride || latest.setByProfessor);
 
             container.innerHTML = `
                 <div class="bg-gray-50 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 hover:bg-gray-100 transition-colors border border-gray-200">
@@ -2031,6 +2032,7 @@ function escapeHtml(str) {
                         <h4 class="font-semibold text-gray-900 text-sm sm:text-base mb-2">
                             ${latest.testName}
                             ${isLate ? '<span class="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">⚠️ Late</span>' : ''}
+                            ${isProfessorEdited ? '<span class="ml-2 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold border border-amber-200"><i class="bi bi-pencil-square"></i> Modified by Professor</span>' : ''}
                         </h4>
                         <div class="flex items-center gap-2 flex-wrap mb-1">
                             <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border ${color.bg} ${color.text} ${color.border}">

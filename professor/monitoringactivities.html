@@ -812,6 +812,13 @@ if (isActivity && window.loadActivityTab) window.loadActivityTab();};
     function esc(str) {
         return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
+    function formatPersonName(name) {
+        const n = String(name || '').trim();
+        if (!n) return 'Professor';
+        const parts = n.split(',').map(p => p.trim()).filter(Boolean);
+        if (parts.length >= 2) return `${parts.slice(1).join(' ')} ${parts[0]}`.trim();
+        return n;
+    }
 </script>
 
 <script type="module">
@@ -862,6 +869,8 @@ if (isActivity && window.loadActivityTab) window.loadActivityTab();};
     const _classifyCache    = new Map();  // cacheKey → category string
 
     const CATEGORY_ORDER = { 'Excellent': 5, 'Good': 4, 'Average': 3, 'Below Average': 2, 'Poor': 1 };
+    const VALID_CATS = new Set(['Excellent','Good','Average','Below Average','Poor']);
+    let _openStudentDetailsEmail = null;
 
     // ─────────────────────────────────────────────────────────────────
     //  HELPERS
@@ -928,40 +937,294 @@ if (isActivity && window.loadActivityTab) window.loadActivityTab();};
         return '-';
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    //  NORM CLASSIFICATION — priority chain with shared default cache (FIX #4)
-    // ─────────────────────────────────────────────────────────────────
-    function _applyThresholds(nd, value) {
-        if (!nd) return null;
-        const thresholds   = nd.thresholds;
-        const lowerIsBetter = nd.lowerIsBetter ?? false;
-        for (const cat of ['Excellent', 'Good', 'Average', 'Below Average']) {
-            const t = thresholds[cat];
-            if (t == null) continue;
-            if (lowerIsBetter ? value <= t : value >= t) return cat;
-        }
+    function getTestData(testId) {
+        return allTests.find(t => t.id === testId) || null;
+    }
+
+    function _normalizeCourseCode(code) {
+        const n = String(code || '').toUpperCase().replace(/\s+/g, '');
+        if (n === 'PE3' || n === 'PE4') return 'PE2';
+        return n || 'PE1';
+    }
+
+    function _isPeNoNormCourse(testData = null, resultDoc = null) {
+        const candidates = [testData?.courseCode, resultDoc?.courseCode];
+        return candidates.some(code => _normalizeCourseCode(code) === 'PE2');
+    }
+
+    function _scoreToCategory(score) {
+        const s = Number(score);
+        if (Number.isNaN(s)) return null;
+        if (s >= 100) return 'Excellent';
+        if (s >= 90) return 'Good';
+        if (s >= 80) return 'Average';
+        if (s >= 70) return 'Below Average';
         return 'Poor';
     }
 
-    async function classifyResult(testName, rawResult, testId, studentEmail, studentGender, studentAge) {
+    function _isValidScore(v) {
+        const n = Number(v);
+        return !Number.isNaN(n) && n >= 0 && n <= 100;
+    }
+
+    function _isJumpRopeTest(testName = '') {
+        const n = String(testName || '').toLowerCase();
+        return n.includes('jumping rope') || n.includes('jump rope') || n.includes('jumprope') || n.includes('jump-rope') || n.includes('skipping');
+    }
+
+    function _classifyByProfessorTarget(testName, rawResult, testData = null, resultDoc = null) {
+        const value = typeof rawResult === 'number' ? rawResult : extractNumericResult(rawResult);
+        if (!(value > 0)) return null;
+        const candidates = [
+            resultDoc?.targetRepetitions, resultDoc?.testTarget,
+            testData?.targetRepetitions, testData?.testTarget,
+            rawResult?.targetRepetitions, rawResult?.testTarget
+        ];
+        let target = 0;
+        for (const c of candidates) {
+            const n = Number(c);
+            if (!Number.isNaN(n) && n > 0) { target = n; break; }
+        }
+        if (!(target > 0)) return null;
+        const n = (testName || '').toLowerCase();
+        const lowerIsBetter = n.includes('mile') || n.includes('run') || n.includes('step');
+        const pct = lowerIsBetter ? (target / value) * 100 : (value / target) * 100;
+        if (pct >= 100) return 'Excellent';
+        if (pct >= 80) return 'Good';
+        if (pct >= 60) return 'Average';
+        if (pct >= 40) return 'Below Average';
+        return 'Poor';
+    }
+
+    function _resolveProfessorTarget(rawResult = null, testData = null, resultDoc = null) {
+        const candidates = [
+            resultDoc?.targetRepetitions, resultDoc?.testTarget,
+            testData?.targetRepetitions, testData?.testTarget,
+            rawResult?.targetRepetitions, rawResult?.testTarget
+        ];
+        for (const c of candidates) {
+            const n = Number(c);
+            if (!Number.isNaN(n) && n > 0) return n;
+        }
+        return 0;
+    }
+
+    function _getFallbackScore(testName, rawResult = null, testData = null, resultDoc = null) {
+        const rawValue = extractNumericResult(resultDoc?.resultData ?? resultDoc?.result ?? rawResult);
+        if (!(rawValue > 0)) {
+            for (const c of [resultDoc?.score, rawResult?.score, rawResult?.value, rawResult?.result]) {
+                if (_isValidScore(c)) return Number(c);
+            }
+            return null;
+        }
+        const n = (testName || '').toLowerCase();
+        const target = _resolveProfessorTarget(rawResult, testData, resultDoc);
+        if (target > 0) {
+            const lowerIsBetter = n.includes('mile') || n.includes('run') || n.includes('step');
+            if (lowerIsBetter && rawValue <= 0) return 60;
+            const pct = lowerIsBetter ? (target / rawValue) * 100 : (rawValue / target) * 100;
+            if (pct >= 100) return 100;
+            if (pct >= 80) return 90;
+            if (pct >= 60) return 80;
+            if (pct >= 40) return 70;
+            return 60;
+        }
+        if (_isJumpRopeTest(n)) {
+            if (rawValue >= 100) return 100;
+            if (rawValue >= 80) return 90;
+            if (rawValue >= 60) return 80;
+            if (rawValue >= 40) return 70;
+            return 60;
+        }
+        for (const c of [resultDoc?.score, rawResult?.score, rawResult?.value, rawResult?.result]) {
+            if (_isValidScore(c)) return Number(c);
+        }
+        return 75;
+    }
+
+    function extractDisplayResult(data) {
+        if (data.result != null) {
+            if (typeof data.result === 'string' || typeof data.result === 'number') return String(data.result);
+            if (typeof data.result === 'object') return String(data.result.value || data.result.repetitions || data.result.time || data.result.distance || '-');
+        }
+        if (data.resultData) {
+            if (typeof data.resultData === 'object') return String(data.resultData.value || data.resultData.repetitions || data.resultData.time || '-');
+            return String(data.resultData);
+        }
+        if (data.repetitions != null) return String(data.repetitions);
+        return '—';
+    }
+
+    function recalcBestForTestEntry(entry) {
+        if (!entry?.attempts?.length) return;
+        let bestCat = entry.attempts[0].category;
+        let bestAttempt = entry.attempts[0];
+        entry.attempts.forEach(a => {
+            if ((CATEGORY_ORDER[a.category] || 3) > (CATEGORY_ORDER[bestCat] || 0)) {
+                bestCat = a.category;
+                bestAttempt = a;
+            }
+        });
+        entry.bestCategory = bestCat;
+        entry.bestAttempt = bestAttempt;
+        entry.attempts.sort((a, b) => b.submittedAt - a.submittedAt);
+    }
+
+    async function resolveAttemptCategory(data, testName, testId, studentEmail, studentGender, studentAge) {
+        const testData = getTestData(testId);
+        const raw = data.result ?? data.resultData ?? data.repetitions ?? data;
+        return classifyResult(testName, raw, testId, studentEmail, studentGender, studentAge, testData, data);
+    }
+
+    async function buildAttemptFromDoc(docSnap, studentData) {
+        const data = docSnap.data();
+        const studentEmail = data.studentEmail || data.email || '';
+        const testId = data.testId || data.scheduledTestId || docSnap.id;
+        const testName = data.testName || 'Unknown Test';
+        const studentAge = _studentAge(studentData);
+        const studentGender = studentData?.gender || data.gender || 'male';
+        const category = await resolveAttemptCategory(data, testName, testId, studentEmail, studentGender, studentAge);
+
+        let submittedDate = new Date();
+        if (data.submittedAt) {
+            if (typeof data.submittedAt.toDate === 'function') submittedDate = data.submittedAt.toDate();
+            else if (data.submittedAt.seconds) submittedDate = new Date(data.submittedAt.seconds * 1000);
+            else if (typeof data.submittedAt === 'string') submittedDate = new Date(data.submittedAt);
+        }
+
+        return {
+            id: docSnap.id,
+            attemptNumber: data.attemptNumber || 1,
+            category,
+            result: extractResult(data),
+            resultDisplay: extractDisplayResult(data),
+            testUnit: data.testUnit || getTestData(testId)?.testUnit || '',
+            submittedAt: submittedDate,
+            formattedDate: submittedDate.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }),
+            testName,
+            isProfessorOverride: !!(data.isProfessorOverride || data.setByProfessor),
+            overriddenByName: formatPersonName(data.overriddenByName || ''),
+            ageGroup: _ageGroup(studentAge)
+        };
+    }
+
+    async function upsertResultFromDoc(docSnap) {
+        const data = docSnap.data();
+        const studentEmail = data.studentEmail || data.email || '';
+        const testId = data.testId || data.scheduledTestId || docSnap.id;
+        if (!studentEmail || data.status !== 'completed') return false;
+
+        const isOurs = studentsByEmail.has(studentEmail) || assignedSections.some(sec => sec.name === data.section);
+        if (!isOurs) return false;
+
+        const studentData = studentsByEmail.get(studentEmail) || allStudents.find(s => s.email === studentEmail || s.uniqueId === studentEmail);
+        const attempt = await buildAttemptFromDoc(docSnap, studentData);
+
+        if (!studentTestResults.has(studentEmail)) studentTestResults.set(studentEmail, new Map());
+        const stMap = studentTestResults.get(studentEmail);
+
+        if (!stMap.has(testId)) {
+            stMap.set(testId, {
+                bestCategory: attempt.category,
+                bestAttempt: attempt,
+                attempts: [attempt],
+                testName: attempt.testName,
+                testId,
+                ageGroup: attempt.ageGroup
+            });
+        } else {
+            const existing = stMap.get(testId);
+            const idx = existing.attempts.findIndex(a => a.id === attempt.id);
+            if (idx >= 0) existing.attempts[idx] = attempt;
+            else existing.attempts.push(attempt);
+            recalcBestForTestEntry(existing);
+        }
+
+        if (!testCompletions.has(testId)) testCompletions.set(testId, new Set());
+        testCompletions.get(testId).add(studentEmail);
+        return true;
+    }
+
+    function removeResultFromDoc(docSnap) {
+        const data = docSnap.data();
+        const studentEmail = data.studentEmail || data.email || '';
+        const testId = data.testId || data.scheduledTestId || docSnap.id;
+        const stMap = studentTestResults.get(studentEmail);
+        if (!stMap?.has(testId)) return;
+
+        const existing = stMap.get(testId);
+        existing.attempts = existing.attempts.filter(a => a.id !== docSnap.id);
+        if (!existing.attempts.length) {
+            stMap.delete(testId);
+            const completions = testCompletions.get(testId);
+            if (completions) {
+                completions.delete(studentEmail);
+                if (!completions.size) testCompletions.delete(testId);
+            }
+        } else {
+            recalcBestForTestEntry(existing);
+        }
+    }
+
+    function refreshOpenModals() {
+        if (currentTestData?.testId) {
+            const secStudents = allStudents.filter(s => s.section === currentTestData.test.section);
+            const completions = testCompletions.get(currentTestData.testId) || new Set();
+            const enabledForTest = testPermissionsMap.get(currentTestData.testId) || new Set();
+            currentModalStudents = secStudents.map(student => {
+                const email = student.email || student.uniqueId || '';
+                const hasTaken = completions.has(email);
+                const isEnabled = !hasTaken && enabledForTest.has(email);
+                let bestCategory = null, attempts = [];
+                if (hasTaken && studentTestResults.has(email)) {
+                    const stMap = studentTestResults.get(email);
+                    if (stMap.has(currentTestData.testId)) {
+                        bestCategory = stMap.get(currentTestData.testId).bestCategory;
+                        attempts = stMap.get(currentTestData.testId).attempts;
+                    }
+                }
+                return { ...student, email, hasTaken, isEnabled, bestCategory, attempts };
+            });
+            filterModalStudents();
+        }
+        if (_openStudentDetailsEmail && currentTestData?.testId) {
+            viewStudentDetails(_openStudentDetailsEmail);
+        }
+    }
+
+    async function classifyResult(testName, rawResult, testId, studentEmail, studentGender, studentAge, testData = null, resultDoc = null) {
         if (!testName) return 'Average';
         const testKey = resolveTestKey(testName);
-        if (!testKey) return 'Average';
-
-        const gender   = _genderKey(studentGender);
+        const gender = _genderKey(studentGender);
         const ageGroup = _ageGroup(studentAge);
-
-        let value = rawResult;
-        if (typeof rawResult === 'object' && rawResult !== null) {
-            value = rawResult.repetitions ?? rawResult.reps ?? rawResult.value
-                 ?? rawResult.time ?? rawResult.distance ?? rawResult.count ?? 0;
-        }
-        value = extractNumericResult(value);
-
-        const cacheKey = `${studentEmail}|${testKey}|${gender}|${ageGroup}|${testId||'none'}|${value}`;
+        const value = typeof rawResult === 'number' ? rawResult : extractNumericResult(rawResult);
+        const cacheKey = `${studentEmail}|${testKey || testName}|${gender}|${ageGroup}|${testId || 'none'}|${value}`;
         if (_classifyCache.has(cacheKey)) return _classifyCache.get(cacheKey);
-
         const set = cat => { _classifyCache.set(cacheKey, cat); return cat; };
+
+        if (_isJumpRopeTest(testName)) {
+            const jumpScore = _getFallbackScore(testName, rawResult, testData, resultDoc);
+            const jumpCategory = _scoreToCategory(jumpScore);
+            if (jumpCategory) return set(jumpCategory);
+            return set('Average');
+        }
+
+        const targetCategory = _classifyByProfessorTarget(testName, rawResult, testData, resultDoc);
+        if (targetCategory) return set(targetCategory);
+
+        if (_isPeNoNormCourse(testData, resultDoc)) {
+            const fallbackScore = _getFallbackScore(testName, rawResult, testData, resultDoc);
+            const fromFallback = _scoreToCategory(fallbackScore);
+            if (fromFallback) return set(fromFallback);
+            return set('Average');
+        }
+
+        if (!testKey) {
+            const fallbackScore = _getFallbackScore(testName, rawResult, testData, resultDoc);
+            const fromFallback = _scoreToCategory(fallbackScore);
+            if (fromFallback) return set(fromFallback);
+            return set('Average');
+        }
 
         const applyThresholds = (nd) => {
             if (!nd?.thresholds) return null;
@@ -974,7 +1237,6 @@ if (isActivity && window.loadActivityTab) window.loadActivityTab();};
             return 'Poor';
         };
 
-        // 1. Student-specific norm override
         if (studentEmail) {
             try {
                 const snap = await getDoc(doc(db, 'studentNorms', studentEmail, 'tests', testKey));
@@ -985,7 +1247,6 @@ if (isActivity && window.loadActivityTab) window.loadActivityTab();};
             } catch (_) {}
         }
 
-        // 2. Test-level norm (scheduledTestNorms subcollection)
         if (testId) {
             try {
                 const snap = await getDoc(doc(db, 'scheduledTestNorms', testId, 'tests', testKey));
@@ -996,19 +1257,16 @@ if (isActivity && window.loadActivityTab) window.loadActivityTab();};
             } catch (_) {}
         }
 
-        // 3. Test-level inline customNorms (from allTests in memory first, then Firestore)
         if (testId) {
-            let cn = null;
-            const testObj = allTests.find(t => t.id === testId);
-            if (testObj?.customNorms?.thresholds) {
-                cn = testObj.customNorms;
+            let cn = testData?.customNorms || null;
+            if (!cn) {
+                const testObj = allTests.find(t => t.id === testId);
+                if (testObj?.customNorms?.thresholds) cn = testObj.customNorms;
             }
             if (!cn) {
                 try {
                     const snap = await getDoc(doc(db, 'scheduledTests', testId));
-                    if (snap.exists() && snap.data().customNorms?.thresholds) {
-                        cn = snap.data().customNorms;
-                    }
+                    if (snap.exists() && snap.data().customNorms?.thresholds) cn = snap.data().customNorms;
                 } catch (_) {}
             }
             if (cn?.thresholds) {
@@ -1017,7 +1275,6 @@ if (isActivity && window.loadActivityTab) window.loadActivityTab();};
             }
         }
 
-        // 4. Default fitnessNorms — shared cache
         const normKey = `${testKey}_${gender}_${ageGroup}`;
         if (!_defaultNormCache.has(normKey)) {
             try {
@@ -1031,7 +1288,6 @@ if (isActivity && window.loadActivityTab) window.loadActivityTab();};
             if (cat) return set(cat);
         }
 
-        // 5. normLookup.js fallback
         try {
             const r = await getNormCategory(db, {
                 testName, result: rawResult,
@@ -1302,7 +1558,6 @@ if (isActivity && window.loadActivityTab) window.loadActivityTab();};
         studentTestResults.clear();
 
         const sectionNames = assignedSections.map(s => s.name);
-        const studentEmailSet = new Set(allStudents.map(s => s.email || s.uniqueId).filter(Boolean));
 
         // Fetch completed results — filter by section (server-side) in batches of 10
         const allDocs = [];
@@ -1325,64 +1580,7 @@ if (isActivity && window.loadActivityTab) window.loadActivityTab();};
         const uniqueDocs = allDocs.filter(d => { if (seen.has(d.id)) return false; seen.add(d.id); return true; });
 
         for (const docSnap of uniqueDocs) {
-            const data         = docSnap.data();
-            const studentEmail = data.studentEmail || data.email || '';
-            const testId       = data.testId || data.scheduledTestId || docSnap.id;
-            const testName     = data.testName || 'Unknown Test';
-            if (!studentEmail) continue;
-
-            const isOurs = studentEmailSet.has(studentEmail)
-                        || assignedSections.some(sec => sec.name === data.section);
-            if (!isOurs) continue;
-
-            // Use fast lookup map (FIX #2 side benefit)
-            const studentData   = studentsByEmail.get(studentEmail) || allStudents.find(s => s.email === studentEmail || s.uniqueId === studentEmail);
-            const studentAge    = _studentAge(studentData);
-            const studentGender = studentData?.gender || data.gender || 'male';
-
-            // Check if record already has a valid category
-            const storedCat = (data.score || data.category);
-            const category = storedCat && ['Excellent','Good','Average','Below Average','Poor'].includes(storedCat)
-                ? storedCat
-                : await classifyResult(testName, data.result || data.resultData || data.repetitions || data, testId, studentEmail, studentGender, studentAge);
-
-            let submittedDate = new Date();
-            if (data.submittedAt) {
-                if (typeof data.submittedAt.toDate === 'function') submittedDate = data.submittedAt.toDate();
-                else if (data.submittedAt.seconds) submittedDate = new Date(data.submittedAt.seconds * 1000);
-                else if (typeof data.submittedAt === 'string') submittedDate = new Date(data.submittedAt);
-            }
-
-            const attempt = {
-                id: docSnap.id,
-                attemptNumber: data.attemptNumber || 1,
-                category,
-                result: extractResult(data),
-                testUnit: data.testUnit || '',
-                submittedAt: submittedDate,
-                formattedDate: submittedDate.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }),
-                testName,
-                isProfessorOverride: data.isProfessorOverride || false,
-                ageGroup: _ageGroup(studentAge)
-            };
-
-            if (!studentTestResults.has(studentEmail)) studentTestResults.set(studentEmail, new Map());
-            const stMap = studentTestResults.get(studentEmail);
-
-            if (!stMap.has(testId)) {
-                stMap.set(testId, { bestCategory: category, bestAttempt: attempt, attempts: [attempt], testName, testId, ageGroup: _ageGroup(studentAge) });
-            } else {
-                const existing = stMap.get(testId);
-                existing.attempts.push(attempt);
-                if ((CATEGORY_ORDER[category] || 3) > (CATEGORY_ORDER[existing.bestCategory] || 0)) {
-                    existing.bestCategory = category;
-                    existing.bestAttempt  = attempt;
-                }
-                existing.attempts.sort((a,b) => b.submittedAt - a.submittedAt);
-            }
-
-            if (!testCompletions.has(testId)) testCompletions.set(testId, new Set());
-            testCompletions.get(testId).add(studentEmail);
+            await upsertResultFromDoc(docSnap);
         }
         updateTestsToday();
     }
@@ -1392,41 +1590,53 @@ if (isActivity && window.loadActivityTab) window.loadActivityTab();};
     // ─────────────────────────────────────────────────────────────────
     function setupRealtimeListener() {
         try {
-            const q = query(collection(db,'testResults'), orderBy('submittedAt','desc'), limit(20));
+            let listenerReady = false;
+            const q = query(collection(db,'testResults'), orderBy('submittedAt','desc'), limit(30));
             const unsub = onSnapshot(q, async snap => {
+                let changed = false;
                 for (const change of snap.docChanges()) {
-                    if (change.type !== 'added') continue;
-                    const data  = change.doc.data();
+                    const data = change.doc.data();
                     const email = data.studentEmail || data.email || '';
-                    const isOurs = (studentsByEmail.has(email))
-                                || assignedSections.some(sec => sec.name === data.section);
+                    const isOurs = studentsByEmail.has(email) || assignedSections.some(sec => sec.name === data.section);
                     if (!isOurs) continue;
 
-                    const testId   = data.testId || data.scheduledTestId || change.doc.id;
-                    const testName = data.testName || 'Fitness Assessment';
-                    const student  = studentsByEmail.get(email);
-
-                    const storedCat = (data.score || data.category);
-                    const category = storedCat && ['Excellent','Good','Average','Below Average','Poor'].includes(storedCat)
-                        ? storedCat
-                        : await classifyResult(testName, data.result || data.resultData || data.repetitions || data, testId, email, student?.gender || data.gender || 'male', _studentAge(student));
-
-                    if (!testCompletions.has(testId)) testCompletions.set(testId, new Set());
-                    testCompletions.get(testId).add(email);
-
-                    if (!studentTestResults.has(email)) studentTestResults.set(email, new Map());
-                    const stMap = studentTestResults.get(email);
-                    if (!stMap.has(testId)) {
-                        stMap.set(testId, { bestCategory: category, attempts: [{category}], testName, testId });
-                    } else {
-                        const ex = stMap.get(testId);
-                        if ((CATEGORY_ORDER[category] || 3) > (CATEGORY_ORDER[ex.bestCategory] || 0)) ex.bestCategory = category;
+                    if (change.type === 'removed') {
+                        removeResultFromDoc(change.doc);
+                        changed = true;
+                        continue;
                     }
 
+                    if (data.status !== 'completed') continue;
+
+                    _classifyCache.clear();
+                    const updated = await upsertResultFromDoc(change.doc);
+                    if (!updated) continue;
+                    changed = true;
+
+                    if (!listenerReady) continue;
+
+                    const testName = data.testName || 'Fitness Assessment';
                     const studentName = esc(data.studentName || email.split('@')[0]);
-                    window.showToast('Test Completed', `${studentName} just finished ${esc(testName)} (${esc(category)})`, 'test');
+                    const stMap = studentTestResults.get(email);
+                    const testId = data.testId || data.scheduledTestId || change.doc.id;
+                    const category = stMap?.get(testId)?.bestCategory || 'Average';
+
+                    if (change.type === 'modified' && (data.isProfessorOverride || data.setByProfessor)) {
+                        window.showToast('Result Updated', `${studentName}'s result for ${esc(testName)} was updated (${esc(category)})`, 'test');
+                    } else if (change.type === 'added') {
+                        window.showToast('Test Completed', `${studentName} just finished ${esc(testName)} (${esc(category)})`, 'test');
+                    }
+                }
+
+                listenerReady = true;
+
+                if (changed) {
                     updateTestsToday();
-                    renderAllTests();
+                    renderOverview();
+                    const testsTab = document.getElementById('testsTab');
+                    if (testsTab && testsTab.style.display !== 'none') renderAllTests();
+                    refreshOpenModals();
+                    updateTime();
                 }
             });
             activeListeners.push(unsub);
@@ -1951,6 +2161,7 @@ window.refreshActivity = async function() {
             const init  = name.charAt(0).toUpperCase();
             const email = esc(s.email || '');
             const aCnt  = s.attempts?.length || 0;
+            const hasEdited = s.attempts?.some(a => a.isProfessorOverride);
 
             let statusBadge = '';
             if (s.hasTaken) {
@@ -1977,6 +2188,7 @@ window.refreshActivity = async function() {
                 <div style="display:flex;align-items:center;gap:6px;padding:0 12px 10px;flex-wrap:nowrap;">
                     ${s.hasTaken && s.bestCategory
                         ? `<span class="category-badge ${getCategoryClass(s.bestCategory)}" style="font-size:10px;padding:3px 8px;flex-shrink:0;">${getCategoryIcon(s.bestCategory)} ${esc(s.bestCategory)}</span>
+                           ${hasEdited ? '<span style="font-size:10px;background:#fef3d4;color:#b45309;padding:2px 7px;border-radius:99px;font-weight:700;border:1px solid #fde68a;flex-shrink:0;">Edited</span>' : ''}
                            ${aCnt > 0 ? `<span style="font-size:10px;color:#8a98ae;background:#f4f6fa;padding:3px 8px;border-radius:99px;border:1px solid #e1e6ef;flex-shrink:0;">${aCnt} attempt${aCnt!==1?'s':''}</span>` : ''}
                            <button onclick="event.stopPropagation();viewStudentDetails(this.closest('[data-email]').dataset.email);"
                               style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;background:linear-gradient(135deg,#0a1628,#1a3a5c);color:white;border:none;border-radius:8px;padding:5px 10px;font-size:10px;font-weight:600;cursor:pointer;flex-shrink:0;">
@@ -1991,6 +2203,7 @@ window.refreshActivity = async function() {
 
     window.viewStudentDetails = function(email) {
         if (!currentTestData) return;
+        _openStudentDetailsEmail = email;
         const testId  = currentTestData.testId;
         const student = studentsByEmail.get(email) || allStudents.find(s => s.email === email || s.uniqueId === email);
         if (!studentTestResults.has(email)) return;
@@ -2011,87 +2224,56 @@ window.refreshActivity = async function() {
             return a.submittedAt - b.submittedAt;
         });
 
-        const VALID_CATS = new Set(['Excellent','Good','Average','Below Average','Poor']);
-        const studentAge    = _studentAge(student);
-        const studentGender = student?.gender || 'male';
+        const bestCat = td.bestCategory || sorted[0]?.category || 'Average';
 
-        // Resolve all attempt categories in parallel from raw result values
-        Promise.all(sorted.map(a => {
-            // Only trust isProfessorOverride stored category
-            const savedCat = a.isProfessorOverride ? a.category : null;
-            if (VALID_CATS.has(savedCat)) return Promise.resolve(savedCat);
-            return classifyResult(
-                a.testName || currentTestData.test.name,
-                a.result,
-                testId,
-                email,
-                studentGender,
-                studentAge
-            );
-        })).then(attemptCats => {
-            // Recalculate best category from independently classified attempts
-            const bestCat = attemptCats.reduce((best, cat) => {
-                return (CATEGORY_ORDER[cat] || 3) > (CATEGORY_ORDER[best] || 0) ? cat : best;
-            }, attemptCats[0] || 'Average');
+        document.getElementById('studentDetailsBestCategory').innerHTML = renderCategoryBadge(bestCat);
 
-            document.getElementById('studentDetailsBestCategory').innerHTML = renderCategoryBadge(bestCat);
+        document.getElementById('studentTestAttempts').innerHTML = sorted.map((a, i) => {
+            const cat = VALID_CATS.has(a.category) ? a.category : 'Average';
+            const isBest = cat === bestCat && (CATEGORY_ORDER[cat] || 0) === Math.max(...sorted.map(x => CATEGORY_ORDER[x.category] || 0));
 
-            document.getElementById('studentTestAttempts').innerHTML = sorted.map((a, i) => {
-                const cat    = attemptCats[i];
-                const isBest = cat === bestCat;
+            const rv = a.resultDisplay || (a.result != null ? String(a.result) : '—');
 
-                // Resolve result display
-                let rv = '—';
-                const rawResult = a.result;
-                const unit = a.testUnit || '';
-                if (rawResult != null) {
-                    if (typeof rawResult === 'object' && rawResult !== null) {
-                        const v = rawResult.repetitions ?? rawResult.reps ?? rawResult.value
-                               ?? rawResult.time ?? rawResult.distance ?? rawResult.count ?? 0;
-                        rv = `${v}${unit ? ' ' + unit : ''}`;
-                    } else {
-                        rv = `${rawResult}${unit ? ' ' + unit : ''}`;
+            let dateStr = a.formattedDate || 'Date not recorded';
+            if (a.submittedAt) {
+                try {
+                    let d;
+                    if (a.submittedAt instanceof Date) d = a.submittedAt;
+                    else if (typeof a.submittedAt.toDate === 'function') d = a.submittedAt.toDate();
+                    else if (a.submittedAt?.seconds != null) d = new Date(a.submittedAt.seconds * 1000);
+                    else d = new Date(a.submittedAt);
+                    if (d && !isNaN(d.getTime())) {
+                        dateStr = `${d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})} at ${d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
                     }
-                }
+                } catch(_) {}
+            }
 
-                // Resolve date
-                let dateStr = 'Date not recorded';
-                if (a.submittedAt) {
-                    try {
-                        let d;
-                        if (a.submittedAt instanceof Date) d = a.submittedAt;
-                        else if (typeof a.submittedAt.toDate === 'function') d = a.submittedAt.toDate();
-                        else if (a.submittedAt?.seconds != null) d = new Date(a.submittedAt.seconds * 1000 + Math.floor((a.submittedAt.nanoseconds ?? 0) / 1e6));
-                        else d = new Date(a.submittedAt);
-                        if (d && !isNaN(d.getTime())) {
-                            dateStr = `${d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})} at ${d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
-                        }
-                    } catch(_) {}
-                }
+            const editBadge = a.isProfessorOverride
+                ? `<span style="font-size:10px;background:#fef3d4;color:#b45309;padding:2px 7px;border-radius:99px;font-weight:700;border:1px solid #fde68a;">Edited by ${esc(a.overriddenByName || 'Professor')}</span>`
+                : '';
 
-                return `
-                <div style="border-radius:12px;border:1px solid ${isBest?'rgba(14,138,95,0.3)':'#e1e6ef'};background:${isBest?'rgba(212,240,230,0.3)':'#f4f6fa'};padding:12px;margin-bottom:6px;">
-                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
-                        <span style="font-size:13px;font-weight:700;color:#0a1628;">Attempt ${a.attemptNumber || (sorted.length - i)}</span>
-                        ${isBest ? '<span style="font-size:10px;background:#d4f0e6;color:#0e8a5f;padding:2px 7px;border-radius:99px;font-weight:700;">Best</span>' : ''}
-                        ${a.isProfessorOverride ? '<span style="font-size:10px;background:#d6eaf8;color:#1a6fa8;padding:2px 7px;border-radius:99px;font-weight:700;">Override</span>' : ''}
-                        <span style="font-size:10px;color:#8a98ae;margin-left:auto;">${esc(dateStr)}</span>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                        <span style="font-size:11px;color:#4a5a72;background:white;padding:3px 10px;border-radius:99px;border:1px solid #e1e6ef;font-weight:600;">
-                            <i class="fas fa-chart-bar" style="font-size:9px;margin-right:3px;"></i>${esc(rv)}
-                        </span>
-                        ${renderCategoryBadge(cat)}
-                    </div>
-                </div>`;
-            }).join('') || '<div class="text-center py-4 text-text-muted text-sm">No attempt details</div>';
-        });
+            return `
+            <div style="border-radius:12px;border:1px solid ${isBest?'rgba(14,138,95,0.3)':'#e1e6ef'};background:${isBest?'rgba(212,240,230,0.3)':'#f4f6fa'};padding:12px;margin-bottom:6px;">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+                    <span style="font-size:13px;font-weight:700;color:#0a1628;">Attempt ${a.attemptNumber || (sorted.length - i)}</span>
+                    ${isBest ? '<span style="font-size:10px;background:#d4f0e6;color:#0e8a5f;padding:2px 7px;border-radius:99px;font-weight:700;">Best</span>' : ''}
+                    ${editBadge}
+                    <span style="font-size:10px;color:#8a98ae;margin-left:auto;">${esc(dateStr)}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <span style="font-size:11px;color:#4a5a72;background:white;padding:3px 10px;border-radius:99px;border:1px solid #e1e6ef;font-weight:600;">
+                        <i class="fas fa-chart-bar" style="font-size:9px;margin-right:3px;"></i>${esc(rv)}
+                    </span>
+                    ${renderCategoryBadge(cat)}
+                </div>
+            </div>`;
+        }).join('') || '<div class="text-center py-4 text-text-muted text-sm">No attempt details</div>';
 
         document.getElementById('studentDetailsModal').classList.add('open');
     };
 
-    window.closeTestModal           = () => { document.getElementById('testDetailModal').classList.remove('open'); currentTestData = null; currentModalStudents = []; currentFilteredStudents = []; };
-    window.closeStudentDetailsModal = () => document.getElementById('studentDetailsModal').classList.remove('open');
+    window.closeTestModal           = () => { document.getElementById('testDetailModal').classList.remove('open'); currentTestData = null; currentModalStudents = []; currentFilteredStudents = []; _openStudentDetailsEmail = null; };
+    window.closeStudentDetailsModal = () => { document.getElementById('studentDetailsModal').classList.remove('open'); _openStudentDetailsEmail = null; };
 
     // ─────────────────────────────────────────────────────────────────
     //  GLOBAL REFRESH — FIX #6: clear _statsInterval before creating new one

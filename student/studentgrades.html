@@ -1109,15 +1109,19 @@ if (testResults.length > 0) {
                 const dateObj = toDate(result.submittedAt);
                 const date = dateObj ? dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
                 const isOverdue = result.status === 'overdue' || result.status === 'late';
+                const isProfessorEdited = !!(result.isProfessorOverride || result.setByProfessor);
+                const professorBadge = isProfessorEdited
+                    ? `<span class="inline-flex items-center gap-1 ml-2 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold border border-amber-200" title="Your test result was updated by your professor."><i class="bi bi-pencil-square"></i> Modified by Professor</span>`
+                    : '';
 
                 html += `
                 <div class="px-6 py-4 hover:bg-gray-50 transition-colors ${isOverdue ? 'bg-red-50/30' : ''}">
                     <div class="block md:hidden">
-                        <div class="mb-3"><h4 class="font-semibold text-gray-900 text-sm mb-1">${result.testName}${isOverdue ? '<span class="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">⚠️ Late</span>' : ''}</h4><p class="text-xs text-gray-500">${result.category}</p><p class="text-xs text-gray-400 mt-1"><i class="bi bi-calendar3"></i> ${date}</p></div>
+                        <div class="mb-3"><h4 class="font-semibold text-gray-900 text-sm mb-1">${result.testName}${isOverdue ? '<span class="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">⚠️ Late</span>' : ''}${professorBadge}</h4><p class="text-xs text-gray-500">${result.category}</p><p class="text-xs text-gray-400 mt-1"><i class="bi bi-calendar3"></i> ${date}</p></div>
                         <div class="flex items-center justify-between"><span class="norm-badge ${cls}"><i class="bi ${ico}"></i> ${displayCat}</span><a href="./studentresult.html?resultId=${result.id}" class="text-blue-600 hover:text-blue-700 text-sm font-medium inline-flex items-center gap-1">View <i class="bi bi-arrow-right"></i></a></div>
                     </div>
                     <div class="hidden md:grid grid-cols-12 gap-4 items-center">
-                        <div class="col-span-4"><h4 class="font-semibold text-gray-900">${result.testName}${isOverdue ? '<span class="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">⚠️ Late</span>' : ''}</h4><p class="text-xs text-gray-500 mt-1">${result.category}</p></div>
+                        <div class="col-span-4"><h4 class="font-semibold text-gray-900">${result.testName}${isOverdue ? '<span class="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold">⚠️ Late</span>' : ''}${professorBadge}</h4><p class="text-xs text-gray-500 mt-1">${result.category}</p></div>
                         <div class="col-span-3"><span class="text-gray-600 text-sm">${result.category}</span></div>
                         <div class="col-span-2 text-center"><span class="text-gray-600 text-sm"><i class="bi bi-calendar3"></i> ${date}</span></div>
                         <div class="col-span-2 flex justify-center"><span class="norm-badge ${cls}"><i class="bi ${ico}"></i> ${displayCat}</span></div>

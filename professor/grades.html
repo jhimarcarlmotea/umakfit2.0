@@ -112,6 +112,11 @@
         .pagination-btn:hover:not(:disabled){border-color:#2d6fc4;color:#2d6fc4;background:#f0f6ff;}
         .pagination-btn.active{background:#2d6fc4;border-color:#2d6fc4;color:white;font-weight:700;}
         .pagination-btn:disabled{opacity:0.4;cursor:not-allowed;}
+        .edit-step .step-circle{width:32px;height:32px;border-radius:50%;background:#e1e6ef;color:#64748b;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;transition:all 0.2s;}
+        .edit-step.active .step-circle{background:#2d6fc4;color:white;}
+        .edit-step.completed .step-circle{background:#0e8a5f;color:white;}
+        .edit-step.active .text-xs{color:#2d6fc4;}
+        .professor-override-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;background:#fef3d4;color:#b45309;border:1px solid #fde68a;white-space:nowrap;}
     </style>
 </head>
 <body class="font-sans bg-surface text-text-primary min-h-screen m-0 p-0">
@@ -158,6 +163,64 @@
     </div>
 </div>
 
+<!-- EDIT RESULT MODAL -->
+<div id="editScoreModal" class="modal-overlay fixed inset-0 bg-black/55 justify-center items-center z-[10001] p-4">
+    <div class="bg-white rounded-2xl w-full max-w-[480px] max-h-[90vh] flex flex-col shadow-[0_30px_80px_rgba(0,0,0,0.25)] animate-fadeSlide overflow-hidden">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-border bg-gradient-to-r from-navy to-royal flex-shrink-0">
+            <h3 class="font-display text-[17px] font-bold text-white flex items-center gap-2"><i class="fas fa-pen-to-square"></i> Edit Test Result</h3>
+            <button onclick="closeEditScoreModal()" class="w-8 h-8 rounded-full bg-white/20 border-0 flex items-center justify-center cursor-pointer text-white hover:bg-white/30 transition-all text-sm"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-6">
+            <p class="text-sm text-text-muted mb-4" id="editScoreTestName">Test Name</p>
+            <div class="flex justify-between mb-6 relative">
+                <div class="absolute top-4 left-8 right-8 h-0.5 bg-border z-0"></div>
+                <div class="edit-step active flex flex-col items-center gap-2 relative z-10" id="editStep1">
+                    <div class="step-circle">1</div>
+                    <div class="text-xs font-semibold text-text-muted">View Current</div>
+                </div>
+                <div class="edit-step flex flex-col items-center gap-2 relative z-10" id="editStep2">
+                    <div class="step-circle">2</div>
+                    <div class="text-xs font-semibold text-text-muted">Edit Result</div>
+                </div>
+            </div>
+            <div class="bg-surface rounded-lg p-4 mb-4 border border-border">
+                <div class="flex justify-between items-center flex-wrap gap-2">
+                    <span class="text-sm font-semibold text-text-secondary">Student</span>
+                    <span class="text-sm font-semibold text-text-primary" id="editScoreStudent">Student Name</span>
+                </div>
+            </div>
+            <div id="editStepContent1">
+                <div class="bg-info-bg rounded-lg p-4 mb-4 border-l-4 border-blue">
+                    <div class="flex justify-between items-center flex-wrap gap-2">
+                        <span class="text-sm font-semibold text-text-secondary">Current Result</span>
+                        <span class="text-sm font-bold text-text-primary font-mono" id="currentResultDisplay">--</span>
+                    </div>
+                </div>
+                <p class="text-sm text-text-muted"><i class="fas fa-info-circle"></i> Click "Next" to edit this result, or leave unchanged by closing the modal.</p>
+            </div>
+            <div id="editStepContent2" style="display:none;">
+                <div class="mb-4">
+                    <label class="block text-text-secondary font-semibold mb-2 text-sm">New Result <span class="text-danger">*</span></label>
+                    <input type="number" id="newResult" class="w-full px-4 py-3 border-2 border-border rounded-lg focus:ring-2 focus:ring-blue/20 focus:border-blue font-semibold font-mono" placeholder="Enter new result" min="0" step="any">
+                    <p class="text-xs text-text-muted mt-1" id="resultHint">Enter the student's achievement. Rating will be recalculated automatically.</p>
+                    <div id="editTargetNotice" class="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg text-sm text-purple-800 font-semibold" style="display:none;">
+                        <i class="fas fa-bullseye"></i> Professor's Target: <strong id="editTargetValue">0</strong> — you cannot enter more than this.
+                    </div>
+                </div>
+                <div id="categoryPreview" class="bg-warning-bg rounded-lg p-4 border-l-4 border-warning" style="display:none;">
+                    <div class="text-xs font-semibold text-warning mb-1">PREVIEW RATING</div>
+                    <div id="previewCategory">—</div>
+                </div>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 px-6 py-4 border-t border-border bg-surface flex-shrink-0">
+            <button onclick="closeEditScoreModal()" class="inline-flex items-center gap-2 px-4 py-2.5 bg-transparent text-text-secondary border border-border rounded-lg font-sans text-sm font-semibold cursor-pointer hover:bg-surface transition-all">Cancel</button>
+            <button id="btnEditNext" class="inline-flex items-center gap-2 px-4 py-2.5 bg-blue text-white rounded-lg font-sans text-sm font-semibold cursor-pointer hover:bg-royal transition-all" onclick="nextEditStep()">Next <i class="fas fa-arrow-right"></i></button>
+            <button id="btnEditSubmit" class="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-br from-royal to-blue text-white rounded-lg font-sans text-sm font-semibold cursor-pointer hover:-translate-y-px hover:shadow-lg transition-all" onclick="submitEditedResult()" style="display:none;"><i class="fas fa-check"></i> Save Result</button>
+        </div>
+    </div>
+</div>
+
 <!-- STUDENT DETAIL MODAL -->
 <div id="studentDetailModal" class="modal-overlay fixed inset-0 bg-black/55 justify-center items-center z-[10000] p-4">
     <div class="bg-white rounded-2xl w-full max-w-[800px] max-h-[88vh] flex flex-col shadow-[0_30px_80px_rgba(0,0,0,0.25)] animate-fadeSlide overflow-hidden">
@@ -185,10 +248,11 @@
             <h4 class="text-navy font-display font-bold text-lg mb-4 flex items-center gap-2">
                 <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-royal to-blue flex items-center justify-content:center text-white text-[11px] flex items-center justify-center"><i class="fas fa-history"></i></div>
                 Activity History
+                <span class="text-xs font-normal text-text-muted ml-1">— use Edit to update a result if needed</span>
             </h4>
             <div class="rounded-xl border border-border overflow-hidden">
                 <table class="detail-table">
-                    <thead><tr><th>Date</th><th>Activity</th><th>Result</th><th>Performance</th></tr></thead>
+                    <thead><tr><th>Date</th><th>Activity</th><th>Result</th><th>Performance</th><th style="width:90px;">Actions</th></tr></thead>
                     <tbody id="detailTableBody"></tbody>
                 </table>
             </div>
@@ -444,12 +508,19 @@
     window.closeConfirmModal=()=>document.getElementById('confirmModal').classList.remove('open');
     window.closeDetailModal=()=>document.getElementById('studentDetailModal').classList.remove('open');
     function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+    function formatPersonName(name){
+        const n=String(name||'').trim();
+        if(!n)return'Professor';
+        const parts=n.split(',').map(p=>p.trim()).filter(Boolean);
+        if(parts.length>=2)return`${parts.slice(1).join(' ')} ${parts[0]}`.trim();
+        return n;
+    }
 </script>
 
 <script type="module">
     import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
     import{getAuth,onAuthStateChanged,signOut}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-    import{getFirestore,collection,getDocs,query,where,doc,getDoc}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+    import{getFirestore,collection,getDocs,query,where,doc,getDoc,updateDoc,addDoc}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
     import{getNormCategory,resolveTestKey,extractNumericResult}from'./normLookup.js';
 
     const firebaseConfig={apiKey:"AIzaSyAgaLunqEf2gs6dSpF_sz1hV5XQ5Wm52jo",authDomain:"umakfit-e3b1d.firebaseapp.com",projectId:"umakfit-e3b1d",storageBucket:"umakfit-e3b1d.appspot.com",messagingSenderId:"276569891504",appId:"1:276569891504:web:39b1732b519f4d8b785175"};
@@ -458,6 +529,9 @@
     let currentUser=null,currentProfessor=null;
     let assignedSections=[];
     let currentFinalGrades=[],filteredFinalGrades=[];
+    let studentsMapGlobal=new Map(),testDataMapGlobal=new Map();
+    let editResultData={studentEmail:'',testId:'',testName:'',testTarget:0,testUnit:'',studentName:'',resultId:'',currentResult:'',maxResult:0,courseCode:''};
+    let editCurrentStep=1,detailStudentKey=null;
 
     // ─── CACHES ───
     const _defaultNormCache=new Map(); // normKey→data|null
@@ -576,6 +650,66 @@
     function _isValidScore(v){
         const n=Number(v);
         return !Number.isNaN(n)&&n>=0&&n<=100;
+    }
+
+    function _isRepetitionCourse(courseCode){
+        const cc=String(courseCode||'').trim().toUpperCase().replace(/\s+/g,' ');
+        const normalized=(cc==='PE3'||cc==='PE4'||cc==='PE 3'||cc==='PE 4')?'PE 2':cc;
+        return normalized==='PE2'||normalized==='PE 2';
+    }
+
+    function _isLowerIsBetterTest(testName=''){
+        const n=String(testName||'').toLowerCase();
+        return n.includes('mile')||n.includes('run')||n.includes('step');
+    }
+
+    function resolveEditResultMax(testName,testData=null,storedTarget=0,courseCode=''){
+        const cc=testData?.courseCode||courseCode||'';
+        if(!_isRepetitionCourse(cc))return 0;
+        if(_isLowerIsBetterTest(testName))return 0;
+        const candidates=[testData?.targetRepetitions,testData?.testTarget,storedTarget];
+        for(const c of candidates){
+            const v=Number(c);
+            if(!Number.isNaN(v)&&v>0)return v;
+        }
+        return 0;
+    }
+
+    function configureEditResultInput(maxVal=0,testUnit=''){
+        const inp=document.getElementById('newResult');
+        const hint=document.getElementById('resultHint');
+        const notice=document.getElementById('editTargetNotice');
+        const targetEl=document.getElementById('editTargetValue');
+        if(!inp)return;
+        inp.value='';
+        inp.classList.remove('border-danger');
+        if(maxVal>0){
+            inp.max=String(maxVal);
+            inp.min='0';
+            inp.step='1';
+            inp.placeholder=`Enter result (max: ${maxVal})`;
+            if(hint)hint.textContent=testUnit?`Enter the value in ${testUnit} (maximum ${maxVal}). Rating will be recalculated automatically.`:`Enter the student's result (maximum ${maxVal}). Rating will be recalculated automatically.`;
+            if(notice&&targetEl){
+                targetEl.textContent=`${maxVal}${testUnit?` ${testUnit}`:' reps'}`;
+                notice.style.display='block';
+            }
+        }else{
+            inp.removeAttribute('max');
+            inp.min='0';
+            inp.step='any';
+            inp.placeholder='Enter new result';
+            if(hint)hint.textContent=testUnit?`Enter the value in ${testUnit}. Rating will be recalculated using existing grading rules.`:'Enter the student\'s achievement. Rating will be recalculated automatically.';
+            if(notice)notice.style.display='none';
+        }
+    }
+
+    function clampEditResultInput(inp){
+        if(!inp)return;
+        const maxVal=editResultData.maxResult||0;
+        if(maxVal>0){
+            const v=parseFloat(inp.value);
+            if(!isNaN(v)&&v>maxVal)inp.value=String(maxVal);
+        }
     }
 
     function _isJumpRopeTest(testName=''){
@@ -760,7 +894,7 @@
         currentProfessor={name:user.displayName||'Professor',email:user.email};
     }
     function setupUI(user){
-        const dn=user.displayName||currentProfessor.fullName||currentProfessor.name||'Professor';
+        const dn=formatPersonName(user.displayName||currentProfessor.fullName||currentProfessor.name||'Professor');
         const email=currentProfessor.email||user.email;const init=dn.charAt(0).toUpperCase();const photo=user.photoURL||null;
         document.getElementById('headerName').textContent=dn;document.getElementById('dropdownName').textContent=dn;document.getElementById('dropdownEmail').textContent=email;
         const setAv=(el,src,i)=>{if(!el)return;el.innerHTML=src?`<img src="${esc(src)}" class="w-full h-full object-cover rounded-full" alt="">`:esc(i);};
@@ -805,11 +939,13 @@
                     .catch(()=>{})
             )
         );
+        testDataMapGlobal=testDataMap;
         // 1. Load students in batched IN query
         const studentsMap=new Map();
         const sc30=[];for(let i=0;i<sectionNames.length;i+=30)sc30.push(sectionNames.slice(i,i+30));
         await Promise.all(sc30.map(chunk=>getDocs(query(collection(db,'students'),where('section','in',chunk))).then(snap=>snap.forEach(d=>{const sd=d.data();if(sd.email)studentsMap.set(sd.email,sd);})).catch(()=>{})));
         if(!studentsMap.size){try{const all=await getDocs(collection(db,'students'));all.forEach(d=>{const sd=d.data();if(sd.email)studentsMap.set(sd.email,sd);});}catch(e){console.error(e);}}
+        studentsMapGlobal=studentsMap;
         // 2. Load testResults by studentEmail (more reliable than section field)
         const allDocs=[];
         const studentEmails=Array.from(studentsMap.keys());
@@ -849,7 +985,7 @@
             let sd2=new Date();
             if(data.submittedAt){if(typeof data.submittedAt.toDate==='function')sd2=data.submittedAt.toDate();else if(data.submittedAt.seconds)sd2=new Date(data.submittedAt.seconds*1000);else if(typeof data.submittedAt==='string')sd2=new Date(data.submittedAt);}
             const attemptNum = data.attemptNumber || 1;
-            const entry={id:ds.id,studentName:data.studentName||'Unknown',section:data.section||'',testId,testName,result:extractDisplayResult(data),category:cat,date:sd2.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),dateObject:sd2,studentEmail:se,isSkinfold,attemptNum,videoUrl:data.videoUrl||data.videoURL||''};
+            const entry={id:ds.id,studentName:data.studentName||'Unknown',section:data.section||'',testId,testName,result:extractDisplayResult(data),category:cat,date:sd2.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),dateObject:sd2,studentEmail:se,isSkinfold,attemptNum,videoUrl:data.videoUrl||data.videoURL||'',testTarget:data.testTarget||testData?.testTarget||testData?.targetRepetitions||data.targetRepetitions||0,testUnit:data.testUnit||testData?.testUnit||'',courseCode:data.courseCode||testData?.courseCode||'',isProfessorOverride:!!(data.isProfessorOverride||data.setByProfessor),overriddenByName:formatPersonName(data.overriddenByName||'')};
             // Only add if not already present
             if(!allAttempts.some(a=>a.id===ds.id)){
                 allAttempts.push(entry);
@@ -914,7 +1050,10 @@
                 name:g.testName,date:g.date,dateObject:g.dateObject,
                 result:g.result,category:g.category,isSkinfold:g.isSkinfold,
                 id:g.id,attemptNum:g.attemptNum,testId:g.testId,
-                videoUrl:g.videoUrl||''
+                videoUrl:g.videoUrl||'',
+                testTarget:g.testTarget||0,testUnit:g.testUnit||'',courseCode:g.courseCode||'',
+                isProfessorOverride:g.isProfessorOverride,overriddenByName:g.overriddenByName||'',
+                studentEmail:g.studentEmail||''
             });
         }
         if(g.testId){
@@ -1054,6 +1193,7 @@
     }
 
     window.showDetail = function(key){
+        detailStudentKey = key;
         const g = currentFinalGrades.find(x => x.key === key);
         if (!g) return;
         document.getElementById('detailAvatar').textContent = (g.name || '?').charAt(0).toUpperCase();
@@ -1104,7 +1244,7 @@
             if (act.isSpacer) {
                 tableHtml += `
                     <tr style="background: #f8fafc;">
-                        <td colspan="4" style="padding: 8px 14px;">
+                        <td colspan="5" style="padding: 8px 14px;">
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <div style="height: 1px; flex: 1; background: linear-gradient(90deg, transparent, #cbd5e1, transparent);"></div>
                                 <span style="font-size: 11px; color: #64748b; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;">Next Test</span>
@@ -1151,10 +1291,28 @@
                         <span style="display: inline-block; padding: 4px 8px; background: #f8fafc; border-radius: 6px; font-size: 13px;">
                             ${esc(String(act.result ?? '—'))}
                         </span>
+                        ${act.isProfessorOverride ? `<div style="margin-top:6px;"><span class="professor-override-badge"><i class="fas fa-pen" style="font-size:9px;"></i> Edited by ${esc(formatPersonName(act.overriddenByName || 'Professor'))}</span></div>` : ''}
                         ${act.videoUrl ? `<div style="margin-top:8px;"><a href="${esc(act.videoUrl)}" target="_blank" rel="noreferrer" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:14px;background:#eff6ff;color:#1d4ed8;font-weight:700;font-size:12px;text-decoration:none;"><i class="fas fa-video" style="font-size:11px;"></i> Watch Video</a></div>` : ''}
                     </td>
                     <td style="vertical-align: top; padding: 16px 14px;">
                         ${renderCategoryBadge(act.category)}
+                    </td>
+                    <td style="vertical-align: top; padding: 16px 14px;">
+                        <button type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface hover:bg-info-bg text-blue border border-border rounded-lg text-xs font-semibold cursor-pointer transition-all"
+                            data-email="${esc(act.studentEmail || g.email || '')}"
+                            data-test-id="${esc(act.testId || '')}"
+                            data-test-name="${esc(act.name || '')}"
+                            data-test-target="${esc(String(act.testTarget || 0))}"
+                            data-course-code="${esc(act.courseCode || '')}"
+                            data-test-unit="${esc(act.testUnit || '')}"
+                            data-student-name="${esc(g.name || '')}"
+                            data-category="${esc(act.category || '')}"
+                            data-result="${esc(String(act.result ?? ''))}"
+                            data-result-id="${esc(act.id || '')}"
+                            onclick="openEditResultFromRow(this)">
+                            <i class="fas fa-pen-to-square"></i> Edit
+                            
+                        </button>
                     </td>
                 </tr>
             `;
@@ -1163,7 +1321,7 @@
         if (!tableHtml) {
             tableHtml = `
                 <tr>
-                    <td colspan="4" style="text-align: center; padding: 40px 20px; color: #94a3b8;">
+                    <td colspan="5" style="text-align: center; padding: 40px 20px; color: #94a3b8;">
                         <i class="fas fa-clipboard-list" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;"></i>
                         <div style="font-size: 14px;">No activity history available</div>
                     </td>
@@ -1173,6 +1331,120 @@
 
         document.getElementById('detailTableBody').innerHTML = tableHtml;
         document.getElementById('studentDetailModal').classList.add('open');
+    };
+
+    // ─── EDIT RESULT ───
+    function updateEditStepUI(){
+        for(let i=1;i<=2;i++){
+            const step=document.getElementById('editStep'+i);
+            const cont=document.getElementById('editStepContent'+i);
+            if(!step||!cont)continue;
+            if(i<editCurrentStep){step.classList.add('completed');step.classList.remove('active');cont.style.display='none';}
+            else if(i===editCurrentStep){step.classList.add('active');step.classList.remove('completed');cont.style.display='block';}
+            else{step.classList.remove('active','completed');cont.style.display='none';}
+        }
+        document.getElementById('btnEditNext').style.display=editCurrentStep===2?'none':'inline-flex';
+        document.getElementById('btnEditSubmit').style.display=editCurrentStep===2?'inline-flex':'none';
+    }
+
+    window.openEditResultFromRow=function(btn){
+        if(!btn?.dataset)return;
+        openEditResultModal(btn.dataset.email,btn.dataset.testId,btn.dataset.testName,Number(btn.dataset.testTarget)||0,btn.dataset.testUnit||'',btn.dataset.studentName,btn.dataset.category,btn.dataset.result,btn.dataset.resultId,btn.dataset.courseCode||'');
+    };
+
+    window.openEditResultModal=function(email,testId,testName,testTarget,testUnit,studentName,currentCategory,currentResult,resultId,courseCode=''){
+        const testData=testDataMapGlobal.get(testId)||null;
+        const maxResult=resolveEditResultMax(testName,testData,testTarget||0,courseCode||testData?.courseCode||'');
+        editResultData={studentEmail:email,testId,testName,testTarget:testTarget||0,testUnit:testUnit||'',studentName,resultId:resultId||'',currentCategory,currentResult,maxResult,courseCode:courseCode||testData?.courseCode||''};
+        document.getElementById('editScoreTestName').textContent=testName||'Activity';
+        document.getElementById('editScoreStudent').textContent=studentName||'Student';
+        document.getElementById('currentResultDisplay').textContent=currentResult?String(currentResult):'No result';
+        configureEditResultInput(maxResult,testUnit||'');
+        editCurrentStep=1;
+        document.getElementById('categoryPreview').style.display='none';
+        updateEditStepUI();
+        document.getElementById('editScoreModal').classList.add('open');
+    };
+
+    window.closeEditScoreModal=()=>document.getElementById('editScoreModal').classList.remove('open');
+    window.nextEditStep=()=>{if(editCurrentStep===1){editCurrentStep=2;configureEditResultInput(editResultData.maxResult||0,editResultData.testUnit||'');updateEditStepUI();}};
+
+    let _previewTimer=null;
+    document.getElementById('newResult')?.addEventListener('input',function(){
+        clampEditResultInput(this);
+        clearTimeout(_previewTimer);
+        const v=parseFloat(this.value);
+        const p=document.getElementById('categoryPreview');
+        if(isNaN(v)||v<0){p.style.display='none';return;}
+        _previewTimer=setTimeout(async()=>{
+            try{
+                const student=studentsMapGlobal.get(editResultData.studentEmail);
+                const testData=testDataMapGlobal.get(editResultData.testId)||null;
+                const cat=await classifyResult(editResultData.testName,v,editResultData.testId,editResultData.studentEmail,student?.gender||'male',_studentAge(student),testData,null);
+                document.getElementById('previewCategory').innerHTML=renderCategoryBadge(cat);
+                p.style.display='block';
+            }catch(_){p.style.display='none';}
+        },300);
+    });
+
+    window.submitEditedResult=async function(){
+        const inp=document.getElementById('newResult');
+        const newVal=parseFloat(inp?.value);
+        const maxVal=editResultData.maxResult||0;
+        if(isNaN(newVal)||newVal<0){window.showAlert('Please enter a valid result.','warning');return;}
+        if(maxVal>0&&newVal>maxVal){
+            clampEditResultInput(inp);
+            window.showAlert(`Result cannot exceed the professor's target of ${maxVal}.`,'warning');
+            return;
+        }
+        const btn=document.getElementById('btnEditSubmit');
+        if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-hourglass-half"></i> Saving...';}
+        try{
+            const student=studentsMapGlobal.get(editResultData.studentEmail);
+            const testData=testDataMapGlobal.get(editResultData.testId)||null;
+            const category=await classifyResult(editResultData.testName,newVal,editResultData.testId,editResultData.studentEmail,student?.gender||'male',_studentAge(student),testData,null);
+            const score=_getFallbackScore(editResultData.testName,newVal,testData,{result:newVal,resultData:{value:newVal}});
+            const now=new Date();
+            let origAt=now;
+            if(editResultData.resultId){try{const ed=await getDoc(doc(db,'testResults',editResultData.resultId));if(ed.exists())origAt=ed.data().submittedAt||now;}catch(_){}}
+            const unit=editResultData.testUnit||'';
+            const resultDisplay=unit?`${newVal} ${unit}`:String(newVal);
+            const data={
+                studentEmail:editResultData.studentEmail,
+                testId:editResultData.testId,
+                testName:editResultData.testName,
+                result:resultDisplay,
+                rawResult:newVal,
+                resultData:{value:newVal,unit},
+                category,
+                score:score??undefined,
+                testTarget:editResultData.testTarget||testData?.testTarget||testData?.targetRepetitions||0,
+                targetRepetitions:testData?.targetRepetitions||editResultData.testTarget||testData?.testTarget||0,
+                testUnit:unit,
+                status:'completed',
+                submittedAt:origAt,
+                isProfessorOverride:true,
+                setByProfessor:true,
+                overriddenBy:currentUser?.email||'',
+                overriddenByName:formatPersonName(currentProfessor?.fullName||currentProfessor?.name||currentUser?.displayName||currentUser?.email||'Professor'),
+                overriddenAt:now,
+                lastEditedAt:now
+            };
+            if(editResultData.resultId)await updateDoc(doc(db,'testResults',editResultData.resultId),data);
+            else await addDoc(collection(db,'testResults'),{...data,studentName:editResultData.studentName,section:student?.section||''});
+            _classifyCache.clear();
+            closeEditScoreModal();
+            await loadGrades();
+            buildFinalGrades();
+            applyFilters();
+            if(detailStudentKey)showDetail(detailStudentKey);
+            window.showAlert(`Result saved. Rating: ${category}`,'success');
+        }catch(err){
+            console.error(err);
+            window.showAlert('Error saving result: '+err.message,'error');
+        }finally{
+            if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-check"></i> Save Result';}
+        }
     };
 
     window.applyFilters=function(){

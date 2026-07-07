@@ -944,6 +944,21 @@ const active = allNotifs.filter(n => {
                 document.getElementById('completedDate').textContent =
                     data.submittedAt ? new Date(data.submittedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '--';
 
+                if (data.isProfessorOverride || data.setByProfessor) {
+                    const statBadges = document.getElementById('statBadges');
+                    if (statBadges && !document.getElementById('professorOverrideNotice')) {
+                        const notice = document.createElement('div');
+                        notice.id = 'professorOverrideNotice';
+                        notice.className = 'w-full flex justify-center mt-4';
+                        notice.innerHTML = `
+                            <div class="inline-flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-5 py-2.5 text-sm font-semibold">
+                                <i class="bi bi-pencil-square"></i>
+                                Your test result was updated by your professor.
+                            </div>`;
+                        statBadges.insertAdjacentElement('afterend', notice);
+                    }
+                }
+
                 // Video section
                 const videoUrl = data.videoUrl || '';
                 const videoSectionEl = document.getElementById('videoResultSection');

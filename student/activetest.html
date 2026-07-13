@@ -313,70 +313,34 @@
                             <div>
                                 <h3 class="text-lg font-extrabold text-slate-800">Video Proof <span class="text-red-500">*</span></h3>
                                 <p class="text-sm text-slate-500 mt-1 leading-relaxed">
-                                    Choose camera recording or upload a video. You cannot submit without a video.
+                                    Paste a link to your video (YouTube or Google Drive). You cannot submit without a valid video link.
                                 </p>
                             </div>
                             <span id="videoStatusPill" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                                No video yet
+                                No video link yet
                             </span>
                         </div>
 
-                        <div class="flex flex-wrap gap-2 mb-4">
-                            <button type="button" id="videoModeCameraBtn"
-                                    class="px-4 py-2 rounded-xl text-sm font-bold border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 transition-all"
-                                    style="box-shadow:0 8px 20px rgba(15,23,42,.04);">
-                                <i class="bi bi-camera-video mr-2"></i> Camera Record
-                            </button>
-                            <button type="button" id="videoModeUploadBtn"
-                                    class="px-4 py-2 rounded-xl text-sm font-bold border border-slate-200 bg-slate-50 text-slate-700 hover:bg-white transition-all">
-                                <i class="bi bi-upload mr-2"></i> Upload Video
-                            </button>
+                        <div class="input-group-custom" style="margin-bottom:0;">
+                            <label class="input-label" for="videoLinkInput">🔗 Video Link <span style="color:#ef4444;">*</span></label>
+                            <input type="url" id="videoLinkInput" class="input-field"
+                                   placeholder="https://youtube.com/... or https://drive.google.com/..."
+                                   autocomplete="off">
+                            <div class="input-hint">
+                                <i class="bi bi-info-circle"></i>
+                                Upload your video to YouTube (Unlisted is fine) or Google Drive first, then paste the shareable link here. Make sure the link is viewable by your professor.
+                            </div>
                         </div>
 
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            <div>
-                               <video id="videoPreviewEl"
-       class="w-full rounded-xl border-2 border-slate-200 bg-black/5"
-       controls
-       playsinline
-       autoplay
-       muted></video>
-                                <div id="videoPreviewEmptyHint" class="mt-2 text-xs text-slate-500">
-                                    Preview will appear here after recording/upload.
-                                </div>
+                        <div class="mt-4">
+                            <div id="videoPreviewWrap" class="hidden rounded-xl overflow-hidden border-2 border-slate-200 bg-black/5">
+                                <div id="videoPreviewEmbed" class="aspect-video w-full"></div>
                             </div>
-
-                            <div>
-                                <div id="videoModeCameraSection" class="block">
-                                    <div class="flex flex-wrap gap-3 items-center">
-                                        <button type="button" id="recordStartBtn"
-                                                class="flex-1 sm:flex-none px-5 py-3 rounded-xl border-0 bg-emerald-500 text-white font-extrabold text-xs uppercase tracking-widest cursor-pointer hover:bg-emerald-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                                            <i class="bi bi-play-circle mr-2"></i> Start Recording
-                                        </button>
-                                        <button type="button" id="recordStopBtn" disabled
-                                                class="flex-1 sm:flex-none px-5 py-3 rounded-xl border-2 border-emerald-200 bg-white text-emerald-700 font-extrabold text-xs uppercase tracking-widest cursor-pointer hover:bg-emerald-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                                            <i class="bi bi-stop-circle mr-2"></i> Stop
-                                        </button>
-                                        <button type="button" id="recordClearBtn"
-                                                class="px-5 py-3 rounded-xl border border-slate-200 bg-white text-slate-700 font-extrabold text-xs uppercase tracking-widest cursor-pointer hover:bg-slate-50 transition-all">
-                                            <i class="bi bi-x-circle mr-2"></i> Clear
-                                        </button>
-                                    </div>
-                                    <p class="text-xs text-slate-500 mt-3 leading-relaxed">
-                                        Tip: Record the full movement. Keep the camera steady for clearer review.
-                                    </p>
-                                </div>
-
-                                <div id="videoModeUploadSection" class="hidden">
-                                    <label class="block text-sm font-bold text-slate-800 mb-2">
-                                        Upload a video file
-                                    </label>
-                                    <input id="videoFileInput" type="file" accept="video/*"
-                                           class="block w-full text-sm text-slate-700 border border-slate-200 bg-white rounded-xl px-3 py-2"/>
-                                    <p class="text-xs text-slate-500 mt-3 leading-relaxed">
-                                        Supported examples: mp4, webm. Make sure your video is clear and includes your movements.
-                                    </p>
-                                </div>
+                            <div id="videoLinkOpenWrap" class="hidden mt-2">
+                                <a id="videoLinkOpenAnchor" href="#" target="_blank" rel="noopener noreferrer"
+                                   class="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700">
+                                    <i class="bi bi-box-arrow-up-right"></i> Open link to verify
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -508,26 +472,11 @@
         const METRONOME_MS = 60000 / STEP_TEST_BPM;
         const STEP_TEST_DURATION = 180;
 
-        // ========== VIDEO CAPTURE / UPLOAD ==========
-        // Video is required for submission.
+        // ========== VIDEO LINK (YouTube / Google Drive) ==========
+        // Video is required for submission, now provided as an external link
+        // instead of an in-browser recording/upload.
         let testNeedsTimer = false; // updated inside setupTestInputs()
-
-        let selectedVideoBlob = null;
-        let selectedVideoObjectUrl = null;
-
-        let videoMode = 'camera'; // 'camera' | 'upload'
-        let isAutoVideoEnabled = false; // auto record for tests with timer
-
-        let cameraStream = null;
-        let mediaRecorder = null;
-        let recordedChunks = [];
-        let isRecordingVideo = false;
-        let pendingVideoFinalize = false;
-
-        // TODO: Fill these in with your Cloudinary values.
-        // Use an *unsigned* upload preset for browser uploads.
-        const CLOUDINARY_CLOUD_NAME = 'dub54pdis';
-        const CLOUDINARY_UPLOAD_PRESET = 'umakfit_unsigned';
+        let currentVideoLink = ''; // the validated, submitted-ready link
 
         function setVideoStatusPill(text, tone = 'neutral') {
             const pill = document.getElementById('videoStatusPill');
@@ -535,7 +484,6 @@
             const tones = {
                 neutral: { bg: 'bg-slate-100', fg: 'text-slate-700', bd: 'border-slate-200' },
                 ready: { bg: 'bg-emerald-50', fg: 'text-emerald-800', bd: 'border-emerald-200' },
-                uploading: { bg: 'bg-blue-50', fg: 'text-blue-800', bd: 'border-blue-200' },
                 error: { bg: 'bg-red-50', fg: 'text-red-800', bd: 'border-red-200' },
             };
             const t = tones[tone] || tones.neutral;
@@ -543,344 +491,110 @@
             pill.textContent = text;
         }
 
-        function setVideoPreviewEmptyHintVisible(visible) {
-            const hint = document.getElementById('videoPreviewEmptyHint');
-            if (!hint) return;
-            hint.style.display = visible ? 'block' : 'none';
+        // Recognizes YouTube and Google Drive links, and extracts an embeddable URL when possible.
+        function parseVideoLink(rawUrl) {
+            let url;
+            try { url = new URL(rawUrl.trim()); } catch (_) { return null; }
+            const host = url.hostname.replace(/^www\./, '');
+
+            // YouTube
+            if (host === 'youtube.com' || host === 'm.youtube.com') {
+                let id = url.searchParams.get('v');
+                if (!id && url.pathname.startsWith('/shorts/')) id = url.pathname.split('/')[2];
+                if (!id && url.pathname.startsWith('/embed/')) id = url.pathname.split('/')[2];
+if (id) return { type: 'youtube', embedUrl: `https://www.youtube-nocookie.com/embed/${id}` };
+                return null;
+            }
+            if (host === 'youtu.be') {
+                const id = url.pathname.split('/')[1];
+                if (id) return { type: 'youtube', embedUrl: `https://www.youtube-nocookie.com/embed/${id}` };
+                return null;
+            }
+
+            // Google Drive
+            if (host === 'drive.google.com') {
+                // formats: /file/d/<id>/view  OR  open?id=<id>  OR  uc?id=<id>
+                let id = null;
+                const fileMatch = url.pathname.match(/\/file\/d\/([^/]+)/);
+                if (fileMatch) id = fileMatch[1];
+                if (!id) id = url.searchParams.get('id');
+                if (id) return { type: 'drive', embedUrl: `https://drive.google.com/file/d/${id}/preview` };
+                return null;
+            }
+
+            return null;
         }
 
- function clearSelectedVideo() {
-    try {
-        selectedVideoBlob = null;
-        if (selectedVideoObjectUrl) {
-            try { URL.revokeObjectURL(selectedVideoObjectUrl); } catch (_) {}
-        }
-        selectedVideoObjectUrl = null;
+ function updateVideoPreview(parsed, rawUrl) {
+    const wrap = document.getElementById('videoPreviewWrap');
+    const embed = document.getElementById('videoPreviewEmbed');
+    const openWrap = document.getElementById('videoLinkOpenWrap');
+    const openAnchor = document.getElementById('videoLinkOpenAnchor');
 
-        const el = document.getElementById('videoPreviewEl');
-        if (el) {
-            el.pause();
-            el.removeAttribute('src');
-            el.load();
-            el.controls = true;
-        }
+    if (parsed) {
+        embed.innerHTML = `<iframe
+            src="${parsed.embedUrl}"
+            class="w-full h-full"
+            style="min-height:280px;border:0;"
+            title="Video proof preview"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            referrerpolicy="strict-origin-when-cross-origin"
+            allowfullscreen></iframe>`;
+        wrap.classList.remove('hidden');
 
-        // Remove recording badge from video preview
-        const badge = document.getElementById('recBadge');
-        if (badge) badge.remove();
-        
-        // Hide timer container
-        const timerContainer = document.getElementById('recordingTimerContainer');
-        if (timerContainer) {
-            timerContainer.style.display = 'none';
-            timerContainer.style.opacity = '1';
-            const timerDisplay = document.getElementById('recordingTimerDisplay');
-            if (timerDisplay) timerDisplay.textContent = '00:00';
-        }
+        // Reminder na kung private/restricted ang video, hindi talaga ito ma-e-embed
+        const hint = document.getElementById('videoEmbedHint') || document.createElement('div');
+        hint.id = 'videoEmbedHint';
+        hint.className = 'text-xs text-slate-400 mt-2 text-center';
+        hint.innerHTML = 'Kung lumabas na "Video unavailable" sa itaas, i-set ang visibility ng video sa YouTube na <b>Unlisted</b> or <b>Public</b> (hindi Private) para ma-preview ito.';
+        wrap.after(hint);
+    } else {
+        embed.innerHTML = '';
+        wrap.classList.add('hidden');
+        document.getElementById('videoEmbedHint')?.remove();
+    }
 
-        setVideoPreviewEmptyHintVisible(true);
-        setVideoStatusPill('No video yet', 'neutral');
-    } catch (e) {
-        console.warn('clearSelectedVideo failed:', e);
+    if (rawUrl) {
+        openAnchor.href = rawUrl;
+        openWrap.classList.remove('hidden');
+    } else {
+        openWrap.classList.add('hidden');
     }
 }
-        function cleanupCamera() {
-            if (cameraStream) {
-                try {
-                    cameraStream.getTracks().forEach(t => t.stop());
-                } catch (_) {}
-            }
-            cameraStream = null;
-        }
-async function startCameraRecording() {
-    if (isRecordingVideo) return;
-    if (videoMode !== 'camera') return;
-
-    clearSelectedVideo();
-
-    const previewEl = document.getElementById('videoPreviewEl');
-    if (!previewEl) return;
-
-    setVideoStatusPill('Requesting camera...', 'neutral');
-    try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    } catch (e) {
-        setVideoStatusPill('Camera access denied', 'error');
-        showErrorPopup('Cannot access camera. Please allow camera permission or upload a video file instead.', 'Camera Error');
-        return;
-    }
-
-    recordedChunks = [];
-
-    const preferredMimeTypes = [
-        'video/webm;codecs=vp9',
-        'video/webm;codecs=vp8',
-        'video/webm',
-    ];
-    const mimeType = preferredMimeTypes.find(t => (window.MediaRecorder && window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(t))) || '';
-
-    try {
-        mediaRecorder = new MediaRecorder(cameraStream, mimeType ? { mimeType } : undefined);
-    } catch (e) {
-        cleanupCamera();
-        setVideoStatusPill('Recording not supported', 'error');
-        showErrorPopup('Your browser does not support in-page camera recording. Please use Upload Video.', 'Recording Unsupported');
-        return;
-    }
-
-    mediaRecorder.ondataavailable = e => {
-        if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-    };
-
-    // Timer variables
-    let recordingStartTime = null;
-    let recordingTimerInterval = null;
-
-    function updateRecordingTimerDisplay() {
-        if (!recordingStartTime) return;
-        const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
-        const minutes = Math.floor(elapsed / 60);
-        const seconds = elapsed % 60;
-        const timerEl = document.getElementById('recordingTimerDisplay');
-        if (timerEl) {
-            timerEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        }
-    }
-
-    function startRecordingTimer() {
-        recordingStartTime = Date.now();
-        if (recordingTimerInterval) clearInterval(recordingTimerInterval);
-        recordingTimerInterval = setInterval(updateRecordingTimerDisplay, 1000);
-        updateRecordingTimerDisplay();
-    }
-
-    function stopRecordingTimer() {
-        if (recordingTimerInterval) {
-            clearInterval(recordingTimerInterval);
-            recordingTimerInterval = null;
-        }
-        recordingStartTime = null;
-        // Don't reset the timer display - keep showing the final time
-        // The timer container will be hidden instead
-    }
-
-    mediaRecorder.onstop = () => {
-        stopRecordingTimer();
-        cleanupCamera();
-        isRecordingVideo = false;
-        // Remove the recording badge from video preview
-        const badge = document.getElementById('recBadge');
-        if (badge) badge.remove();
-        
-        if (pendingVideoFinalize) {
-            pendingVideoFinalize = false;
+        function validateVideoLink() {
+            const input = document.getElementById('videoLinkInput');
+            const raw = (input?.value || '').trim();
             const submitBtn = document.getElementById('submitBtn');
-            if (submitBtn) submitBtn.disabled = false;
-        }
-        const stopBtn = document.getElementById('recordStopBtn');
-        const startBtn = document.getElementById('recordStartBtn');
-        if (startBtn) startBtn.disabled = false;
-        if (stopBtn) stopBtn.disabled = true;
 
-        const blobType = mediaRecorder?.mimeType || 'video/webm';
-        const blob = new Blob(recordedChunks, { type: blobType });
-        selectedVideoBlob = blob;
-        selectedVideoObjectUrl = URL.createObjectURL(blob);
-
-        previewEl.srcObject = null;
-        previewEl.src = selectedVideoObjectUrl;
-        previewEl.controls = true;
-        setVideoPreviewEmptyHintVisible(false);
-        setVideoStatusPill('Video ready', 'ready');
-    };
-
-    isRecordingVideo = true;
-    const startBtn = document.getElementById('recordStartBtn');
-    const stopBtn = document.getElementById('recordStopBtn');
-    if (startBtn) startBtn.disabled = true;
-    if (stopBtn) stopBtn.disabled = false;
-
-    previewEl.srcObject = cameraStream;
-    previewEl.muted = true;
-    previewEl.autoplay = true;
-    previewEl.controls = false;
-    previewEl.play().catch(() => {});
-
-    try {
-        mediaRecorder.start();
-        startRecordingTimer();
-        setVideoStatusPill('Recording...', 'ready');
-        
-        // Show live recording badge on the video preview element
-        const prevWrap = document.getElementById('videoPreviewEl')?.parentElement;
-        if (prevWrap) {
-            prevWrap.style.position = 'relative';
-            let badge = document.getElementById('recBadge');
-            if (!badge) {
-                badge = document.createElement('div');
-                badge.id = 'recBadge';
-                badge.style.cssText = 'position:absolute;top:8px;left:8px;background:#ef4444;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;display:flex;align-items:center;gap:5px;z-index:10;';
-                badge.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:#fff;display:inline-block;"></span> REC';
-                prevWrap.appendChild(badge);
-            }
-        }
-        
-        // Create timer display next to the Stop button (inline with buttons)
-        let timerContainer = document.getElementById('recordingTimerContainer');
-        if (!timerContainer) {
-            // Find the div that contains the buttons
-            const buttonContainer = document.querySelector('#videoModeCameraSection .flex.flex-wrap.gap-3');
-            if (buttonContainer) {
-                timerContainer = document.createElement('div');
-                timerContainer.id = 'recordingTimerContainer';
-                timerContainer.style.marginLeft = 'auto';
-                timerContainer.style.display = 'flex';
-                timerContainer.style.alignItems = 'center';
-                timerContainer.innerHTML = `
-                    <div style="display:flex;align-items:center;gap:8px;background:#fef2f2;padding:6px 14px;border-radius:20px;border:1px solid #fecaca;">
-                        <span style="width:10px;height:10px;border-radius:50%;background:#ef4444;animation:pulseRed 1s infinite;"></span>
-                        <span style="color:#dc2626;font-weight:700;">Recording:</span>
-                        <span id="recordingTimerDisplay" style="font-family:monospace;font-size:16px;font-weight:700;color:#dc2626;">00:00</span>
-                    </div>
-                `;
-                buttonContainer.appendChild(timerContainer);
-            }
-        } else {
-            timerContainer.style.display = 'flex';
-            const timerDisplay = document.getElementById('recordingTimerDisplay');
-            if (timerDisplay) timerDisplay.textContent = '00:00';
-        }
-        
-    } catch (e) {
-        stopRecordingTimer();
-        cleanupCamera();
-        isRecordingVideo = false;
-        setVideoStatusPill('Recording failed', 'error');
-        showErrorPopup('Failed to start recording. Please try again or upload a video file instead.', 'Recording Failed');
-    }
-}
-function stopCameraRecording() {
-    if (!isRecordingVideo) return;
-    try { 
-        mediaRecorder?.stop();
-        // Hide the timer container but keep the final time visible briefly
-        const timerContainer = document.getElementById('recordingTimerContainer');
-        if (timerContainer) {
-            // Fade out effect
-            timerContainer.style.transition = 'opacity 0.5s ease';
-            timerContainer.style.opacity = '0';
-            setTimeout(() => {
-                if (timerContainer) {
-                    timerContainer.style.display = 'none';
-                    timerContainer.style.opacity = '1';
-                }
-            }, 500);
-        }
-    } catch (_) {}
-}
-        async function handleVideoFile(file) {
-            if (!file) return;
-            if (!file.type || !file.type.startsWith('video/')) {
-                showErrorPopup('Please select a valid video file.', 'Invalid File');
+            if (!raw) {
+                currentVideoLink = '';
+                setVideoStatusPill('No video link yet', 'neutral');
+                updateVideoPreview(null, '');
+                if (submitBtn) submitBtn.disabled = true;
                 return;
             }
 
-            clearSelectedVideo();
-            selectedVideoBlob = file;
-            selectedVideoObjectUrl = URL.createObjectURL(file);
-
-            const previewEl = document.getElementById('videoPreviewEl');
-            if (previewEl) {
-                previewEl.pause();
-previewEl.pause();
-previewEl.srcObject = null;
-previewEl.removeAttribute('src');
-previewEl.load();
-previewEl.src = selectedVideoObjectUrl;
-previewEl.controls = true;
-previewEl.muted = false;
-previewEl.play().catch(() => {});
-
+            const parsed = parseVideoLink(raw);
+            if (!parsed) {
+                currentVideoLink = '';
+                setVideoStatusPill('Invalid link', 'error');
+                updateVideoPreview(null, raw);
+                if (submitBtn) submitBtn.disabled = true;
+                return;
             }
 
-            setVideoPreviewEmptyHintVisible(false);
-            setVideoStatusPill('Video ready', 'ready');
+            currentVideoLink = raw;
+            setVideoStatusPill(parsed.type === 'youtube' ? 'YouTube link ready' : 'Google Drive link ready', 'ready');
+            updateVideoPreview(parsed, raw);
+            if (submitBtn) submitBtn.disabled = false;
         }
 
-        function setVideoMode(mode) {
-            videoMode = mode === 'upload' ? 'upload' : 'camera';
-
-            const cameraBtn = document.getElementById('videoModeCameraBtn');
-            const uploadBtn = document.getElementById('videoModeUploadBtn');
-            const cameraSection = document.getElementById('videoModeCameraSection');
-            const uploadSection = document.getElementById('videoModeUploadSection');
-
-            const cameraActive = videoMode === 'camera';
-            if (cameraBtn) cameraBtn.className = cameraActive
-                ? 'px-4 py-2 rounded-xl text-sm font-bold border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition-all'
-                : 'px-4 py-2 rounded-xl text-sm font-bold border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 transition-all';
-
-            if (uploadBtn) uploadBtn.className = !cameraActive
-                ? 'px-4 py-2 rounded-xl text-sm font-bold border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition-all'
-                : 'px-4 py-2 rounded-xl text-sm font-bold border border-slate-200 bg-slate-50 text-slate-700 hover:bg-white transition-all';
-
-            if (cameraSection) cameraSection.style.display = cameraActive ? 'block' : 'none';
-            if (uploadSection) uploadSection.style.display = cameraActive ? 'none' : 'block';
-
-            // If switching away from camera, stop camera stream.
-            if (videoMode !== 'camera') stopCameraRecording();
-            clearSelectedVideo(); // require re-selection after changing mode
-        }
-
-        function ensureCloudinaryConfig() {
-            if (!CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME === 'YOUR_CLOUD_NAME') {
-                throw new Error('Cloudinary config missing: set CLOUDINARY_CLOUD_NAME.');
-            }
-            if (!CLOUDINARY_UPLOAD_PRESET || CLOUDINARY_UPLOAD_PRESET === 'YOUR_UNSIGNED_UPLOAD_PRESET') {
-                throw new Error('Cloudinary config missing: set CLOUDINARY_UPLOAD_PRESET (unsigned upload preset).');
-            }
-        }
-
-        async function uploadVideoToCloudinary(blob, { filename, folder } = {}) {
-            ensureCloudinaryConfig();
-
-            const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`;
-            const formData = new FormData();
-            formData.append('file', blob, filename || 'video.webm');
-            formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-            formData.append('resource_type', 'video');
-            if (folder) formData.append('folder', folder);
-
-            setVideoStatusPill('Uploading video...', 'uploading');
-
-            const res = await fetch(url, { method: 'POST', body: formData });
-            const json = await res.json().catch(() => null);
-            if (!res.ok) {
-                const msg = json?.error?.message || `Cloudinary upload failed (${res.status})`;
-                throw new Error(msg);
-            }
-
-            if (!json?.secure_url) throw new Error('Cloudinary upload succeeded but no secure_url was returned.');
-            return { secure_url: json.secure_url, public_id: json.public_id };
-        }
-
-        function maybeAutoStartVideoRecording() {
-            if (!isAutoVideoEnabled) return;
-            if (videoMode !== 'camera') return;
-            if (isRecordingVideo) return;
-            // Auto-start only when a timer test is running.
-            // (User can still manually record using the buttons.)
-            startCameraRecording().catch(() => {});
-        }
-
-        function maybeAutoStopVideoRecording() {
-            if (!isAutoVideoEnabled) return;
-            if (videoMode !== 'camera') return;
-            pendingVideoFinalize = true;
-            setVideoStatusPill('Finalizing video...', 'uploading');
-            const submitBtn = document.getElementById('submitBtn');
-            if (submitBtn) submitBtn.disabled = true;
-            stopCameraRecording();
+        function clearSelectedVideo() {
+            const input = document.getElementById('videoLinkInput');
+            if (input) input.value = '';
+            currentVideoLink = '';
+            setVideoStatusPill('No video link yet', 'neutral');
+            updateVideoPreview(null, '');
         }
 
         // ========== HELPERS (mirrored from dashboard) ==========
@@ -1336,10 +1050,6 @@ window.startTimer = async function() {
     if (!isRunning) {
         window.activeTestId = await createActiveTestDocument();
         isRunning = true; isPaused = false; startTime = Date.now() - elapsedTime;
-        // Auto-start camera recording when timer starts (if no video recorded yet).
-        if (!selectedVideoBlob && videoMode === 'camera' && !isRecordingVideo) {
-            startCameraRecording().catch(() => {});
-        }
                 if (isStepTest()) {
                     document.getElementById('minutes').textContent = '03';
                     document.getElementById('seconds').textContent = '00';
@@ -1370,14 +1080,12 @@ window.startTimer = async function() {
         window.stopTimer = async function() {
             if (isRunning || isPaused) {
                 isRunning = false; isPaused = false; clearInterval(timerInterval); stopMetronome();
-                // Stop auto-recording when the timer test is finished.
-                maybeAutoStopVideoRecording();
                 document.getElementById('startBtn').style.display = 'none';
                 document.getElementById('pauseBtn').style.display = 'none';
                 document.getElementById('stopBtn').style.display = 'none';
                 document.getElementById('resetBtn').style.display = 'inline-flex';
                 const submitBtn = document.getElementById('submitBtn');
-                if (submitBtn) submitBtn.disabled = pendingVideoFinalize;
+                if (submitBtn) submitBtn.disabled = !currentVideoLink;
                 updateStatus('completed', 'Test Completed');
                 // ✅ Fire-and-forget in parallel — no need to await sequentially
                 Promise.all([
@@ -1417,8 +1125,7 @@ window.startTimer = async function() {
             document.getElementById('resetConfirmBtn').addEventListener('click', () => {
                 overlay.remove();
                 clearInterval(timerInterval); stopMetronome(); isRunning = false; isPaused = false; elapsedTime = 0;
-                // Stop any ongoing recording and require a fresh video for the new attempt.
-                stopCameraRecording();
+                // Require a fresh video link for the new attempt.
                 clearSelectedVideo();
                 document.getElementById('minutes').textContent = '00';
                 document.getElementById('seconds').textContent = '00';
@@ -1518,8 +1225,7 @@ window.startTimer = async function() {
             const needsTimer = n.includes('plank') || n.includes('step test') || n.includes('3-minute') || n.includes('mile') || n.includes('run') || n.includes('1-mile');
             const isStepTestType = n.includes('step test') || n.includes('3-minute');
             testNeedsTimer = needsTimer;
-            isAutoVideoEnabled = needsTimer;
-            // Require a fresh video for each test attempt/page load.
+            // Require a fresh video link for each test attempt/page load.
             try { clearSelectedVideo(); } catch (_) {}
             timerSection.style.display = needsTimer ? 'block' : 'none';
             document.getElementById('metronomeSection').style.display = (needsTimer && isStepTestType) ? 'block' : 'none';
@@ -1593,6 +1299,8 @@ window.startTimer = async function() {
     document.getElementById('submitBtn').disabled = false;
 }
             inputSection.innerHTML = html;
+            // Video link requirement always overrides the base enable/disable above.
+            validateVideoLink();
         }
 
         window.updateSkinfoldSites = function() {
@@ -1748,8 +1456,9 @@ return 'Poor';
         window.submitTest = async function() {
             if (!currentTest || !studentData) { showErrorPopup('Missing required data. Please reload the page and try again.'); return; }
 
-            if (!selectedVideoBlob) {
-                showErrorPopup('Video is required. Please record with camera or upload a video before submitting.', 'Video Required');
+            validateVideoLink();
+            if (!currentVideoLink) {
+                showErrorPopup('A valid YouTube or Google Drive video link is required before submitting.', 'Video Link Required');
                 return;
             }
 
@@ -1852,14 +1561,6 @@ if (isJumpRope) {
                 const isFirst = currentAttempts === 0;
                 const attemptNumber = currentAttempts + 1;
 
-                // ✅ Upload video first (so professor can review immediately after submit)
-                const safeEmail = String(studentData.email || '').replace(/[^a-zA-Z0-9_-]/g, '_');
-                const mime = selectedVideoBlob.type || '';
-                const ext = mime.includes('mp4') ? 'mp4' : 'webm';
-                const filename = `umakfit_${safeEmail}_${currentTest.id}_attempt_${attemptNumber}.${ext}`;
-                const folder = `umakfit/testResults/${currentTest.id}/${safeEmail}`;
-                const videoUpload = await uploadVideoToCloudinary(selectedVideoBlob, { filename, folder });
-
                 // ✅ Write result, then fire student/test counter updates in parallel
                 const docRef = await addDoc(collection(db,'testResults'), {
                     testId: currentTest.id,
@@ -1878,10 +1579,10 @@ if (isJumpRope) {
                     attemptsAllowed: currentTest.attemptsAllowed || 1,
                     timestamp: serverTimestamp(),
                     submittedAt: new Date().toISOString(),
-                    videoProvider: 'cloudinary',
-                    videoUrl: videoUpload.secure_url,
-                    videoPublicId: videoUpload.public_id,
-                    videoMimeType: mime || null,
+                    videoProvider: 'link',
+                    videoUrl: currentVideoLink,
+                    videoPublicId: null,
+                    videoMimeType: null,
                     status: 'completed'
                 });
 
@@ -2141,21 +1842,12 @@ if (isJumpRope) {
                         loadTestData()
                     ]);
 
-                    // ========== VIDEO UI SETUP ==========
+                    // ========== VIDEO LINK UI SETUP ==========
                     try {
-                        // Default mode: camera. Users can switch to upload any time.
-                        setVideoMode('camera');
-                        document.getElementById('videoModeCameraBtn')?.addEventListener('click', () => setVideoMode('camera'));
-                        document.getElementById('videoModeUploadBtn')?.addEventListener('click', () => setVideoMode('upload'));
-                        document.getElementById('recordStartBtn')?.addEventListener('click', () => startCameraRecording());
-                        document.getElementById('recordStopBtn')?.addEventListener('click', () => stopCameraRecording());
-                        document.getElementById('recordClearBtn')?.addEventListener('click', () => clearSelectedVideo());
-                        document.getElementById('videoFileInput')?.addEventListener('change', async (e) => {
-                            const f = e?.target?.files?.[0];
-                            if (f) await handleVideoFile(f);
-                        });
+                        document.getElementById('videoLinkInput')?.addEventListener('input', () => validateVideoLink());
+                        document.getElementById('videoLinkInput')?.addEventListener('blur', () => validateVideoLink());
                     } catch (e) {
-                        console.warn('Video UI setup failed:', e);
+                        console.warn('Video link UI setup failed:', e);
                     }
 
                     // ✅ Setup notifications and check unread in parallel after student data ready
@@ -2192,8 +1884,6 @@ if (isJumpRope) {
             if (unsubscribeTestDeletion) unsubscribeTestDeletion();
             if (_notifUnsub) { _notifUnsub(); _notifUnsub = null; }
             clearInterval(timerInterval); stopMetronome();
-            try { stopCameraRecording(); } catch (_) {}
-            try { cleanupCamera(); } catch (_) {}
         });
 
         window.toggleNotificationDropdown = toggleNotificationDropdown;
@@ -2232,6 +1922,7 @@ function showConfirm(message, onConfirm) {
         try { onConfirm?.(); } finally { overlay.remove(); }
     });
 }
+
 
 window.addEventListener('scroll', () => {
     const currentScrollY = window.scrollY;

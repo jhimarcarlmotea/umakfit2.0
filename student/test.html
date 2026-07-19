@@ -374,6 +374,7 @@
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
         import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
         import { getFirestore, doc, getDoc, collection, query, where, getDocs, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { filterNotificationsForStudent } from './notificationUtils.js';
 
         const firebaseConfig = {
             apiKey: "AIzaSyAgaLunqEf2gs6dSpF_sz1hV5XQ5Wm52jo",
@@ -787,10 +788,10 @@ function normalizeCourseCode(value) {
             return snap.docs.map(d => ({ id: d.id, ...d.data() }));
         }
 
-        async function fetchNotifications(section) {
+        async function fetchNotifications(section, email) {
         if (!section || section === 'Not Assigned') return [];
         const snap = await getDocs(query(collection(db, 'notifications'), where('section', '==', section)));
-        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        return filterNotificationsForStudent(snap.docs.map(d => ({ id: d.id, ...d.data() })), email);
     }
 
         async function fetchTestPermissions(email) {
@@ -833,7 +834,7 @@ function normalizeCourseCode(value) {
             const [testResults, scheduledTests, notifications, testPermissions] = await Promise.all([
                 fetchAllTestResults(studentData.email),
                 fetchScheduledTests(studentData.section),
-                fetchNotifications(studentData.section),
+                fetchNotifications(studentData.section, studentData.email),
                 fetchTestPermissions(studentData.email)
             ]);
 
@@ -1539,7 +1540,7 @@ async function updateNotificationBadgeAfterDelete() {
     let readNotifications = JSON.parse(localStorage.getItem(readKey) || '[]');
     
     try {
-        const notifications = await fetchNotifications(studentData.section);
+        const notifications = await fetchNotifications(studentData.section, studentData.email);
         const deletedKeysKey3 = `deletedNotifKeys_${studentData?.email}`;
 const deletedKeys3 = JSON.parse(localStorage.getItem(deletedKeysKey3) || '[]');
 const activeNotifications = notifications.filter(n => {
@@ -1625,7 +1626,10 @@ function setupLiveListeners(initialTestResults) {
     if (studentData.section !== 'Not Assigned') {
         const notifQuery = query(collection(db, 'notifications'), where('section', '==', studentData.section));
         registerListener(onSnapshot(notifQuery, (snap) => {
-            cachedNotifications = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            cachedNotifications = filterNotificationsForStudent(
+                snap.docs.map(d => ({ id: d.id, ...d.data() })),
+                studentData.email
+            );
             processNotifications(cachedNotifications);
         }, (_) => {}));
     }

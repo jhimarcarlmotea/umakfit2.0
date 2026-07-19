@@ -3108,8 +3108,27 @@ async function sortStudentTests() {
             let origAt = now;
             if (editResultData.resultId) { try { const ed=await getDoc(doc(db,'testResults',editResultData.resultId)); if(ed.exists()) origAt=ed.data().submittedAt||now; } catch(_){} }
             const data = { studentEmail:editResultData.studentEmail, testId:editResultData.testId, testName:editResultData.testName, result:newVal, rawResult:newVal, resultData:{value:newVal,unit:editResultData.testUnit}, category, testTarget:editResultData.testTarget, testUnit:editResultData.testUnit, status:'completed', submittedAt:origAt, isProfessorOverride:true, setByProfessor:true, overriddenBy:currentUser?.email||'', overriddenByName:currentUser?.displayName||currentUser?.email||'Professor', overriddenAt:now, lastEditedAt:now };
+            const unit = editResultData.testUnit || '';
+            const resultDisplay = unit ? `${newVal} ${unit}` : String(newVal);
+            const professorName = currentUser?.displayName || currentUser?.email || 'Professor';
+            let savedResultId = editResultData.resultId;
             if (editResultData.resultId) await updateDoc(doc(db,'testResults',editResultData.resultId),data);
-            else await addDoc(collection(db,'testResults'),data);
+            else { const ref = await addDoc(collection(db,'testResults'),data); savedResultId = ref.id; }
+            try {
+                await addDoc(collection(db,'notifications'), {
+                    type: 'grade_updated',
+                    title: 'Result Updated by Professor',
+                    message: `Your ${editResultData.testName} result was updated to ${resultDisplay} (${category}) by ${professorName}.`,
+                    section: student?.section || '',
+                    studentEmail: editResultData.studentEmail,
+                    testId: editResultData.testId,
+                    testName: editResultData.testName,
+                    resultId: savedResultId || '',
+                    isRead: false,
+                    createdAt: serverTimestamp(),
+                    timestamp: new Date().toISOString()
+                });
+            } catch (notifErr) { console.error('Grade notification error:', notifErr); }
             window.showSuccessModal(`Result saved! Category: ${category}`);
             window.closeEditScoreModal();
         } catch(err) {

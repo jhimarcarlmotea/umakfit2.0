@@ -699,6 +699,7 @@
                                        from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
         import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL }
                                        from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
+        import { filterNotificationsForStudent } from './notificationUtils.js';
 
         const firebaseConfig = {
             apiKey: "AIzaSyAgaLunqEf2gs6dSpF_sz1hV5XQ5Wm52jo",
@@ -942,8 +943,10 @@
                 const deletedKeysKey = `deletedNotifKeys_${studentData.email}`;
                 const deletedKeys    = JSON.parse(localStorage.getItem(deletedKeysKey) || '[]');
                 const active = [];
-                snap.forEach(d => {
-                    const n = { id: d.id, ...d.data() };
+                filterNotificationsForStudent(
+                    snap.docs.map(d => ({ id: d.id, ...d.data() })),
+                    studentData.email
+                ).forEach(n => {
                     if (deleted.includes(n.id)) return;
                     if (deletedKeys.includes(buildDedupKey(n))) return;
                     active.push(n);
@@ -971,8 +974,10 @@
                 const deletedKey = `deletedNotifications_${studentData.email}`;
                 const read    = JSON.parse(localStorage.getItem(readKey) || '[]');
                 const deleted = JSON.parse(localStorage.getItem(deletedKey) || '[]');
-                const allNotifs = [];
-                snap.forEach(d => allNotifs.push({ id: d.id, ...d.data() }));
+                const allNotifs = filterNotificationsForStudent(
+                    snap.docs.map(d => ({ id: d.id, ...d.data() })),
+                    studentData.email
+                );
                 const deletedKeysKey2 = `deletedNotifKeys_${studentData.email}`;
                 const deletedKeys2    = JSON.parse(localStorage.getItem(deletedKeysKey2) || '[]');
                 const active = allNotifs.filter(n => {

@@ -632,6 +632,7 @@
     where, getDocs, orderBy, limit, updateDoc, onSnapshot
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
         import { getNormCategory, getNormDoc, resolveTestKey, resolveAgeGroup, resolveGender, extractNumericResult } from './normLookup.js';
+        import { filterNotificationsForStudent } from './notificationUtils.js';
 
         const firebaseConfig = {
             apiKey: "AIzaSyAgaLunqEf2gs6dSpF_sz1hV5XQ5Wm52jo",
@@ -1098,10 +1099,10 @@ function getNormCategorySync(testName, result, testId = null) {
     const messageKey = (data.message || '').substring(0, 80);
     return `${titleKey}|${messageKey}`;
 }
-async function fetchNotifications(section) {
+async function fetchNotifications(section, email) {
     if (!section || section === 'Not Assigned') return [];
     const snap = await getDocs(query(collection(db, 'notifications'), where('section', '==', section)));
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return filterNotificationsForStudent(snap.docs.map(d => ({ id: d.id, ...d.data() })), email);
 }
             function setupRealtimeNotificationListener(section, email) {
     if (!section || section === 'Not Assigned') return;
@@ -1115,9 +1116,10 @@ async function fetchNotifications(section) {
         const deleted = JSON.parse(localStorage.getItem(deletedKey) || '[]');
         const read = JSON.parse(localStorage.getItem(readKey) || '[]');
 
-        const active = snapshot.docs
-            .map(d => ({ id: d.id, ...d.data() }))
-            .filter(n => !deleted.includes(n.id));
+        const active = filterNotificationsForStudent(
+            snapshot.docs.map(d => ({ id: d.id, ...d.data() })),
+            email
+        ).filter(n => !deleted.includes(n.id));
 
         const seen = new Set(), unique = [];
         active.forEach(n => {
@@ -1162,7 +1164,10 @@ async function fetchNotifications(section) {
 
             // Re-calculate badge: existing unread notifs + new unread test notifications
             const notifSnap = await getDocs(query(collection(db, 'notifications'), where('section', '==', section)));
-            const notifs = notifSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(n => !deleted.includes(n.id));
+            const notifs = filterNotificationsForStudent(
+                notifSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+                email
+            ).filter(n => !deleted.includes(n.id));
 
             const seen = new Set(), unique = [];
             notifs.forEach(n => {
@@ -1763,7 +1768,7 @@ async function loadNotificationDropdown() {
     }
 
     try {
-        const notifications = await fetchNotifications(studentData.section);
+        const notifications = await fetchNotifications(studentData.section, studentData.email);
         const readKey = `readNotifications_${studentData.email}`;
         const deletedKey = `deletedNotifications_${studentData.email}`;
         const read = JSON.parse(localStorage.getItem(readKey) || '[]');
@@ -1882,7 +1887,7 @@ window.deleteAllNotificationsFromDropdown = function() {
         let deletedNotifications = JSON.parse(localStorage.getItem(deletedKey) || '[]');
         let deletedDedupKeys = JSON.parse(localStorage.getItem(deletedDedupKey) || '[]');
 
-        const currentNotifications = await fetchNotifications(studentData?.section);
+        const currentNotifications = await fetchNotifications(studentData?.section, studentData?.email);
         currentNotifications.forEach(n => {
             if (!deletedNotifications.includes(n.id)) {
                 deletedNotifications.push(n.id);
@@ -1912,7 +1917,7 @@ async function updateNotificationBadgeAfterDelete() {
     const deleted = JSON.parse(localStorage.getItem(deletedKey) || '[]');
     const read = JSON.parse(localStorage.getItem(readKey) || '[]');
     try {
-        const notifications = await fetchNotifications(studentData.section);
+        const notifications = await fetchNotifications(studentData.section, studentData.email);
         const deletedKeysKey3 = `deletedNotifKeys_${studentData?.email}`;
 const deletedKeys3 = JSON.parse(localStorage.getItem(deletedKeysKey3) || '[]');
 const active = notifications.filter(n => {

@@ -1,5 +1,5 @@
 // shared/emailNotifier.js
-// Single EmailJS template handles both test and lesson emails
+// Single EmailJS template handles test, lesson, and grade-update emails
 
 const EMAIL_SERVICE_ID  = 'service_nlclozn';
 const EMAIL_TEMPLATE_ID = 'test-notification'; // reuse existing template
@@ -124,14 +124,6 @@ function buildLessonEmailHTML({ student_name, lesson_title, lesson_type, section
 </div></div></body></html>`;
 }
 
-export async function sendTestEmail({ to_email, student_name, test_name, section, professor_name, test_date, test_time, deadline_date, deadline_time }) {
-    const html = buildTestEmailHTML({ student_name, test_name, section, professor_name, test_date, test_time, deadline_date, deadline_time });
-    return emailjs.send(EMAIL_SERVICE_ID, EMAIL_TEMPLATE_ID, {
-        to_email,
-        subject: `📋 New Fitness Test Assigned: ${test_name} — ${section}`,
-        html_content: html,
-    });
-}
 function buildReminderEmailHTML({ student_name, test_name, section, professor_name, deadline_date, deadline_time, hours_left }) {
     return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -197,6 +189,86 @@ function buildReminderEmailHTML({ student_name, test_name, section, professor_na
 </div></div></body></html>`;
 }
 
+// ── NEW: Grade / Result Update email ──
+function buildGradeUpdateEmailHTML({ student_name, test_name, section, professor_name, new_result, category, update_date }) {
+    const catColors = {
+        'Excellent':       { bg: '#d1fae5', text: '#065f46', border: '#a7f3d0' },
+        'Good':            { bg: '#dbeafe', text: '#1e40af', border: '#93c5fd' },
+        'Average':         { bg: '#fef9c3', text: '#854d0e', border: '#fde047' },
+        'Below Average':   { bg: '#fed7aa', text: '#9a3412', border: '#fb923c' },
+        'Poor':            { bg: '#fce8e6', text: '#991b1b', border: '#fca5a5' },
+    };
+    const c = catColors[category] || { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
+    return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{margin:0;padding:0;background:#f4f6fa;font-family:Arial,sans-serif;}
+  .wrapper{max-width:600px;margin:0 auto;background:white;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);}
+  .header{background:linear-gradient(135deg,#0a1628 0%,#1e4d8c 100%);padding:32px 32px 24px;text-align:center;}
+  .logo{font-size:28px;font-weight:900;color:#c8a84b;letter-spacing:2px;}
+  .sub{font-size:12px;color:rgba(255,255,255,0.5);letter-spacing:3px;text-transform:uppercase;margin-top:6px;}
+  .badge{display:inline-block;background:rgba(200,168,75,0.15);border:1px solid rgba(200,168,75,0.3);color:#c8a84b;border-radius:20px;padding:6px 16px;font-size:12px;font-weight:600;margin-top:12px;}
+  .body{padding:32px;}
+  .box{background:linear-gradient(135deg,#0a1628,#1e4d8c);border-radius:12px;padding:20px 24px;margin:20px 0;text-align:center;}
+  .box-label{font-size:11px;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;}
+  .box-value{font-size:22px;font-weight:800;color:#c8a84b;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0;}
+  .card{background:#f8fafc;border:1px solid #e1e6ef;border-radius:10px;padding:14px 16px;}
+  .card-label{font-size:10px;color:#8a98ae;text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:6px;}
+  .card-value{font-size:14px;color:#0a1628;font-weight:700;}
+  .result-box{background:#f8fafc;border:1.5px solid #e1e6ef;border-radius:10px;padding:16px;margin:20px 0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .result-label{font-size:11px;color:#8a98ae;text-transform:uppercase;letter-spacing:1px;font-weight:700;}
+  .result-value{font-size:20px;color:#0a1628;font-weight:800;margin-top:4px;}
+  .cat-pill{display:inline-block;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:800;background:${c.bg};color:${c.text};border:1.5px solid ${c.border};}
+  .footer{background:#f4f6fa;padding:20px 32px;text-align:center;border-top:1px solid #e1e6ef;}
+  .footer p{font-size:12px;color:#8a98ae;margin:4px 0;}
+  @media(max-width:480px){.grid{grid-template-columns:1fr;}.body{padding:20px;}.result-box{flex-direction:column;align-items:flex-start;}}
+</style></head>
+<body><div style="background:#f4f6fa;padding:24px 12px;">
+<div class="wrapper">
+  <div class="header">
+    <div class="logo">UMakFIT</div>
+    <div class="sub">College of Human Kinetics</div>
+    <div class="badge">✏️ Result Updated</div>
+  </div>
+  <div class="body">
+    <p style="font-size:16px;color:#374151;margin-bottom:8px;">Hi <strong>${student_name}</strong>,</p>
+    <p style="color:#6b7280;font-size:14px;margin-bottom:0;">Your professor has updated the result of one of your fitness activities. Please see the details below.</p>
+    <div class="box">
+      <div class="box-label">Activity</div>
+      <div class="box-value">${test_name}</div>
+    </div>
+    <div class="grid">
+      <div class="card"><div class="card-label">📚 Section</div><div class="card-value">${section}</div></div>
+      <div class="card"><div class="card-label">👨‍🏫 Updated By</div><div class="card-value">${professor_name}</div></div>
+      <div class="card" style="grid-column:1/-1;"><div class="card-label">📅 Updated On</div><div class="card-value">${update_date}</div></div>
+    </div>
+    <div class="result-box">
+      <div>
+        <div class="result-label">New Result</div>
+        <div class="result-value">${new_result}</div>
+      </div>
+      <div class="cat-pill">${category}</div>
+    </div>
+    <p style="font-size:13px;color:#6b7280;margin-top:16px;">Log in to <strong>UMakFIT</strong> to view your full performance history.</p>
+  </div>
+  <div class="footer">
+    <p><strong style="color:#0a1628;">University of Makati — College of Human Kinetics</strong></p>
+    <p>JP Rizal Ext., West Rembo, Taguig City</p>
+    <p style="margin-top:8px;font-size:11px;">This is an automated message from UMakFIT. Please do not reply.</p>
+  </div>
+</div></div></body></html>`;
+}
+
+export async function sendTestEmail({ to_email, student_name, test_name, section, professor_name, test_date, test_time, deadline_date, deadline_time }) {
+    const html = buildTestEmailHTML({ student_name, test_name, section, professor_name, test_date, test_time, deadline_date, deadline_time });
+    return emailjs.send(EMAIL_SERVICE_ID, EMAIL_TEMPLATE_ID, {
+        to_email,
+        subject: `📋 New Fitness Test Assigned: ${test_name} — ${section}`,
+        html_content: html,
+    });
+}
+
 export async function sendReminderEmail({ to_email, student_name, test_name, section, professor_name, deadline_date, deadline_time, hours_left }) {
     const html = buildReminderEmailHTML({ student_name, test_name, section, professor_name, deadline_date, deadline_time, hours_left });
     return emailjs.send(EMAIL_SERVICE_ID, EMAIL_TEMPLATE_ID, {
@@ -205,6 +277,7 @@ export async function sendReminderEmail({ to_email, student_name, test_name, sec
         html_content: html,
     });
 }
+
 export async function sendLessonEmail({ to_email, student_name, lesson_title, lesson_type, section, professor_name, publish_date, description }) {
     const html = buildLessonEmailHTML({ student_name, lesson_title, lesson_type, section, professor_name, publish_date, description });
     return emailjs.send(EMAIL_SERVICE_ID, EMAIL_TEMPLATE_ID, {
@@ -212,5 +285,14 @@ export async function sendLessonEmail({ to_email, student_name, lesson_title, le
         subject: `📚 New Lesson Available: ${lesson_title} — ${section}`,
         html_content: html,
     });
-    
+}
+
+// ── NEW: sends the "result updated by professor" notification email ──
+export async function sendGradeUpdateEmail({ to_email, student_name, test_name, section, professor_name, new_result, category, update_date }) {
+    const html = buildGradeUpdateEmailHTML({ student_name, test_name, section, professor_name, new_result, category, update_date });
+    return emailjs.send(EMAIL_SERVICE_ID, EMAIL_TEMPLATE_ID, {
+        to_email,
+        subject: `✏️ Result Updated: ${test_name} — ${section}`,
+        html_content: html,
+    });
 }

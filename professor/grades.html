@@ -7,6 +7,10 @@
     <script type="module" src="../shared/roleGuard.js"></script>
     <title>UMakFit — Professor Grades</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3.2.0/dist/email.min.js"></script>
+<script>
+    emailjs.init("Vr6ccYqxOyf_7gNzO");
+</script>
     <script>
         tailwind.config = {
             theme: {
@@ -521,7 +525,8 @@
     import{initializeApp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
     import{getAuth,onAuthStateChanged,signOut}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
     import{getFirestore,collection,getDocs,query,where,doc,getDoc,updateDoc,addDoc,serverTimestamp}from'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-    import{getNormCategory,resolveTestKey,extractNumericResult}from'./normLookup.js';
+import{getNormCategory,resolveTestKey,extractNumericResult}from'./normLookup.js';
+import{sendGradeUpdateEmail}from'./shared/emailNotifier.js';    
 
     const firebaseConfig={apiKey:"AIzaSyAgaLunqEf2gs6dSpF_sz1hV5XQ5Wm52jo",authDomain:"umakfit-e3b1d.firebaseapp.com",projectId:"umakfit-e3b1d",storageBucket:"umakfit-e3b1d.appspot.com",messagingSenderId:"276569891504",appId:"1:276569891504:web:39b1732b519f4d8b785175"};
     const app=initializeApp(firebaseConfig);const auth=getAuth(app);const db=getFirestore(app);
@@ -1433,7 +1438,7 @@
             let savedResultId=editResultData.resultId;
             if(editResultData.resultId)await updateDoc(doc(db,'testResults',editResultData.resultId),data);
             else{const ref=await addDoc(collection(db,'testResults'),{...data,studentName:editResultData.studentName,section:student?.section||''});savedResultId=ref.id;}
-            const professorName=data.overriddenByName;
+ const professorName=data.overriddenByName;
             try{
                 await addDoc(collection(db,'notifications'),{
                     type:'grade_updated',
@@ -1449,6 +1454,21 @@
                     timestamp:new Date().toISOString()
                 });
             }catch(notifErr){console.error('Grade notification error:',notifErr);}
+            if(editResultData.studentEmail){
+                try{
+                    await sendGradeUpdateEmail({
+                        to_email:editResultData.studentEmail,
+                        student_name:editResultData.studentName||'Student',
+                        test_name:editResultData.testName,
+                        section:student?.section||'',
+                        professor_name:professorName,
+                        new_result:resultDisplay,
+                        category,
+                        update_date:now.toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})
+                    });
+                    console.log('Grade update email sent to:',editResultData.studentEmail);
+                }catch(emailErr){console.warn('Grade update email failed:',emailErr);}
+            }
             _classifyCache.clear();
             closeEditScoreModal();
             await loadGrades();
